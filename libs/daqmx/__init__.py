@@ -37,7 +37,7 @@ def daqmx(f,args):
         dll.DAQmxGetErrorString(result,error,BUF_SIZE)
         raise DAQmxException(error.value)
 
-def getDevices():
+def get_devices():
     """
     returns list of device identifiers
 
@@ -52,64 +52,6 @@ def getDevices():
         )
     )
     return parseStringList(devices.value)
-
-AI = 0
-"""id for analog input task type"""
-DO = 1
-"""id for digital output task type"""
-CI = 2
-"""id for counter input task type"""
-CO = 3
-"""id for counter output task type"""
-AO = 4
-"""id for analog output task type"""
-
-TASK_TYPES = {
-    AI:'analog input',
-    DO:'digital output',
-    CI:'counter input',
-    CO:'counter output',
-    AO:'analog output'
-}
-"""dictionary associating readable names with task type ids"""
-
-def getPhysicalChannels(device):
-    """
-    return a list physical channels,
-    organized by task type, available
-    on the specified device
-
-    @param device: device identifier (e.g. I{dev0})
-    @type device: string
-
-    @returns: dictionary. a list of physical
-        channels for each task type
-        are accessed by passing the
-        associated task type id to
-        the dictionary.    
-    """
-    d = {}
-    for taskType in TASK_TYPES.keys():
-        channels = create_string_buffer(BUF_SIZE)
-        daqmx(
-            getattr(
-                dll,
-                {
-                    AI:'DAQmxGetDevAIPhysicalChans',
-                    DO:'DAQmxGetDevDOLines',
-                    CI:'DAQmxGetDevCIPhysicalChans',
-                    CO:'DAQmxGetDevCOPhysicalChans',
-                    AO:'DAQmxGetDevAOPhysicalChans'
-                }[taskType]
-            ),
-            (
-                device,
-                channels,
-                BUF_SIZE
-            )
-        )
-        d[taskType] = parseStringList(channels.value)
-    return d
 
 def parseStringList(stringList):
     return stringList.split(', ') if stringList else []
