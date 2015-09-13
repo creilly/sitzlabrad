@@ -1,7 +1,6 @@
 from ctypes import *
 from daqmxconstants import constants
 from util import DAQmxException
-import numpy
 
 dll = windll.LoadLibrary("nicaiu.dll")
 """handle to NI DAQmx c library"""
@@ -56,10 +55,3 @@ def get_devices():
 def parseStringList(stringList):
     return stringList.split(', ') if stringList else []
 
-if __name__ == '__main__':
-    for device in getDevices():
-        print device
-        for taskType, channels in getPhysicalChannels(device).items():
-            print '\t' + TASK_TYPES[taskType]
-            for channel in channels:
-                print '\t\t' + channel

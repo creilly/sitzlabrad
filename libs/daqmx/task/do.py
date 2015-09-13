@@ -48,14 +48,3 @@ class DOTask(Task):
             )
         )
 
-if __name__ == '__main__':    
-    tasks = Task.get_global_tasks()
-    print '\n'.join(
-        '%d:\t%s' % ( index, name )
-        for index, name in enumerate(tasks)
-        )
-    do_task = DOTask(tasks[int(raw_input('--> '))])
-    print 'writing true'
-    do_task.write_state(True)
-    print 'write false'
-    do_task.write_state(False)
