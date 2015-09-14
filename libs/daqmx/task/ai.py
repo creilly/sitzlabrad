@@ -16,7 +16,7 @@ class AITask(Task):
                 self.handle, 
                 c_double(constants['DAQmx_Val_WaitInfinitely'])
                 )
-            )
+            )        
         daqmx(
             dll.DAQmxStopTask,
             (
@@ -31,7 +31,8 @@ class AITask(Task):
                 byref(bufSize)
             )
         )
-        bufSize = bufSize.value        
+        channels = self.get_channels()
+        bufSize = bufSize.value * len(self.get_channels())        
         samples = np.zeros(bufSize)
         samplesRead = c_int(0)
         daqmx(
@@ -48,7 +49,6 @@ class AITask(Task):
             )
         )
         samplesRead = samplesRead.value
-        channels = self.get_channels()
         byChannel = np.reshape(
             samples[:len(channels) * samplesRead],
             (len(channels),samplesRead)

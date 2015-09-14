@@ -40,13 +40,14 @@ class VoltmeterServer(LabradServer):
     def start_acquisition(self):
         samples = yield deferToThread(self.ai_task.acquire_samples)
         averages = {
-            channel:np.average(series) for channel, series in samples.items()
+            channel:np.average(series) 
+            for channel, series in samples.items()
             }
         for d, channel in self.subscribers:
             d.callback(averages[channel])
         self.subscribers = []
 
-    @setting(10, channel='s', returns='v')
+    @setting(10, channel='s', returns='v')    
     def get_sample(self,c,channel):
         if not self.subscribers:
             self.start_acquisition()

@@ -29,6 +29,7 @@ INIT_POS = 'initial position'
 BACKLASH = 'backlash'
 INIT_DIR = 'initial direction' # true:forwards, false:backwards
 DELAY = 'delay'
+ENABLE_TASK_NAME = 'enable task name'
 
 ON_NEW_POSITION = 'on_new_position'
 
@@ -77,13 +78,19 @@ class StepperMotorServer(LabradServer):
         backlash = yield reg.get(BACKLASH)
         init_dir = yield reg.get(INIT_DIR)
         delay = yield reg.get(DELAY)
+        enable_task_name = yield reg.get(ENABLE_TASK_NAME)
         self.stepper_motors[stepper_motor] = StepperMotor(
             DOTask(step_task_name),
             DOTask(dir_task_name),
             init_pos,
             backlash,
             init_dir,
-            delay
+            delay,
+            (
+                DOTask(enable_task_name) 
+                if enable_task_name is not None else 
+                None
+                )
             )
 
     @setting(10, returns='*s')
