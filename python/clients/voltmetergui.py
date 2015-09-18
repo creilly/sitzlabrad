@@ -10,7 +10,7 @@ from labrad.wrappers import connectAsync
 from pyqtgraph import PlotWidget
 
 CHANNEL = 999
-TRACE_SIZE = 50
+TRACE_SIZE = 150
 class VoltmeterWidget(QtGui.QWidget):
     def __init__(self):
         QtGui.QWidget.__init__(self)
@@ -42,6 +42,7 @@ class VoltmeterWidget(QtGui.QWidget):
                 dialogs[channel] = dialog
                 def on_finished(_):
                     dialogs.pop(channel)
+                    self.activateWindow()
                 dialog.finished.connect(on_finished)
                 dialog.show()
         list_widget.itemDoubleClicked.connect(on_double_clicked)
@@ -49,16 +50,16 @@ class VoltmeterWidget(QtGui.QWidget):
         layout.addWidget(run_check)
         @inlineCallbacks
         def get_samples():
-            sample_requests = {
-                channel:vm.get_sample(channel)
-                for channel in channels
-                }
+            packet = vm.packet()
+            for channel in channels:
+                packet.get_sample(channel,key=channel)
+            samples = yield packet.send()
             for list_item in [
                 list_widget.item(index)
                 for index in range(list_widget.count())                
                 ]:
                 channel = list_item.data(CHANNEL)
-                sample = yield sample_requests[channel]
+                sample = samples[channel]
                 trace = traces[channel]
                 trace.pop()
                 trace.insert(0,sample)
