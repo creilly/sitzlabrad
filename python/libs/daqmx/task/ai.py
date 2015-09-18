@@ -1,9 +1,11 @@
 from daqmx import *
 from daqmx.task import Task
 import numpy as np
-
+from time import clock
 class AITask(Task):
     def acquire_samples(self):
+        time = clock()
+        print 'start', clock() - time
         daqmx(
             dll.DAQmxStartTask,
             (
@@ -17,12 +19,6 @@ class AITask(Task):
                 c_double(constants['DAQmx_Val_WaitInfinitely'])
                 )
             )        
-        daqmx(
-            dll.DAQmxStopTask,
-            (
-                self.handle,
-            )
-        )
         bufSize = c_uint32(0)
         daqmx(
             dll.DAQmxGetBufInputBufSize,
@@ -48,10 +44,17 @@ class AITask(Task):
                 None
             )
         )
+
         samplesRead = samplesRead.value
         byChannel = np.reshape(
             samples[:len(channels) * samplesRead],
             (len(channels),samplesRead)
             )
+        daqmx(
+            dll.DAQmxStopTask,
+            (
+                self.handle,
+            )
+        )
         return {channel: data for channel, data in zip(channels,byChannel)}
 
