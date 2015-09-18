@@ -42,6 +42,9 @@ void init_pins() {
   digitalWrite(counter_reset_pin,HIGH);
   digitalWrite(trig_slope_pin,LOW);		
   digitalWrite(clock_pin,LOW);
+  digitalWrite(clear_pin,LOW);
+  delay(10);
+  digitalWrite(clear_pin,HIGH);
 }
 
 void init_params() {
