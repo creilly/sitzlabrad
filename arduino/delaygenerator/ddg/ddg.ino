@@ -21,6 +21,7 @@ const char id_command = 'i'; // returns device id
 const char term_char = '\n'; // commands are terminated with term_char
 
 // response
+const char handshake_response = 'h'; // indicate readiness
 const char success_response = 's'; // command successful
 const char command_failure_response = 'c'; // invalid command
 const char send_delay_response = 'd'; // send desired delay
@@ -59,8 +60,9 @@ void setup() {
   init_pins();
   init_params();
   set_delay(current_delay);
-  Serial.begin(115200);
   Serial.setTimeout(-1); // wait forever
+  Serial.begin(115200);
+  Serial.println(handshake_response);
 }
 
 void loop() {
