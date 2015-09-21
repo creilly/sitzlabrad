@@ -12,17 +12,17 @@ from pyqtgraph import PlotWidget
 CHANNEL = 999
 TRACE_SIZE = 150
 class VoltmeterWidget(QtGui.QWidget):
-    def __init__(self):
+    def __init__(self,vm_server):
         QtGui.QWidget.__init__(self)
+        self.vm_server = vm_server
         self.init_widget()
     @inlineCallbacks
     def init_widget(self):
+        vm = self.vm_server
         layout = QtGui.QVBoxLayout()
         self.setLayout(layout)
         list_widget = QtGui.QListWidget()
         layout.addWidget(list_widget)
-        cxn = yield connectAsync()
-        vm = cxn.voltmeter
         channels = yield vm.get_channels()
         traces = {
             channel:[0]*TRACE_SIZE for channel in channels
@@ -93,8 +93,10 @@ class ChannelWidget(QtGui.QDialog):
     def update_plot(self):
         self.plot.setData(self.trace)
 if __name__ == '__main__':
+    @inlineCallbacks
     def main():
-        vm_widget = VoltmeterWidget()
+        cxn = yield connectAsync()
+        vm_widget = VoltmeterWidget(cxn.voltmeter)
         container.append(vm_widget)
         vm_widget.show()
     container = []
