@@ -8,6 +8,7 @@ from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet import reactor
 from steppermotorclient import StepperMotorClient
 from labrad.wrappers import connectAsync
+from qtutils.labelwidget import LabelWidget
 
 CHUNK = 50
 RANGE = (-1000000,1000000)
@@ -17,8 +18,6 @@ class StepperMotorWidget(QtGui.QWidget):
         QtGui.QWidget.__init__(self)
         layout = QtGui.QVBoxLayout()
         self.setLayout(layout)
-        sm_name = sm_client.get_name()
-        layout.addWidget(QtGui.QLabel(sm_name))
         position_label = QtGui.QLabel()
         layout.addWidget(position_label)
         sm_client.on_new_position(position_label.setNum)
@@ -55,30 +54,31 @@ class StepperMotorWidget(QtGui.QWidget):
         layout.addWidget(stop_check)
 
 class StepperMotorGroupWidget(QtGui.QWidget):
-    def __init__(self):
+    def __init__(self,sm_server):
         QtGui.QWidget.__init__(self)
-        self.init_widget()
-    
-    @inlineCallbacks
-    def init_widget(self):
         layout = QtGui.QHBoxLayout()
         self.setLayout(layout)
-        cxn = yield connectAsync()
-        sm = cxn.stepper_motor
-        sm_names = yield sm.get_stepper_motors()
-        for name in sm_names:
-            layout.addWidget(
-                StepperMotorWidget(
-                    StepperMotorClient(name,sm)
+        def on_stepper_motors(sm_names):
+            for name in sm_names:
+                layout.addWidget(
+                    LabelWidget(
+                        name,
+                        StepperMotorWidget(
+                            StepperMotorClient(name,sm_server)
+                        )
                     )
                 )
+        sm_server.get_stepper_motors().addCallback(on_stepper_motors)
     def closeEvent(self,event):
         event.accept()
-        reactor.stop()
+        if reactor.running():
+            reactor.stop()
 
 if __name__ == '__main__':
+    @inlineCallbacks
     def main():
-        sm_widget = StepperMotorGroupWidget()
+        cxn = yield connectAsync()
+        sm_widget = StepperMotorGroupWidget(cxn.stepper_motor)
         container.append(sm_widget)
         sm_widget.show()
     container = []
