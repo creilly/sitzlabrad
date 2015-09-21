@@ -19,7 +19,4 @@ class StepperMotorClient:
 
     def set_position(self,position):
         return self.sm_server.set_position(self.sm_name,position)
-
-    def get_name(self):
-        return self.sm_name
     
