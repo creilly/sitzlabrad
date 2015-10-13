@@ -72,7 +72,7 @@ class DelayGenerator(SerialLineTransceiver):
                 line_trans = SerialLineTransceiver(ser)
                 if cls._handshakes(line_trans) and id == cls._get_id(line_trans):
                     return ser
-            except NoResponseException:
+            except SerialLineTransceiverException:
                 continue
         raise DelayGeneratorException('device id %d not found' % id)
 
