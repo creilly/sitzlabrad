@@ -12,7 +12,7 @@ from qtutils.labelwidget import LabelWidget
 from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
 from labrad.wrappers import connectAsync
-from connectionmanager import ConnectManager
+from connectionmanager import ConnectionManager
 
 WIDGETS = {
     'Voltmeter':VoltmeterWidget,
