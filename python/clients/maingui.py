@@ -63,15 +63,7 @@ class MainWidget(QtGui.QWidget):
                 return
             widget = LabelWidget(
                 server_name,
-                WIDGETS[
-                    server_name
-                ](
-                    client.servers[
-                        mangle(
-                            server_name
-                        )
-                    ]
-                )
+                WIDGETS[server_name](client.servers[server_name])
             )
             widgets[server_name] = widget
             layout.addWidget(widget)
