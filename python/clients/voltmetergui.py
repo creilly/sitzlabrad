@@ -3,11 +3,12 @@ from PySide import QtGui, QtCore
 if QtCore.QCoreApplication.instance() is None:
     app = QtGui.QApplication(sys.argv)
     import qt4reactor
-    qt4reactor.install() 
+    qt4reactor.install()
+
+from pyqtgraph import PlotWidget
 from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet import reactor
 from labrad.wrappers import connectAsync
-from pyqtgraph import PlotWidget
 
 CHANNEL = 999
 TRACE_SIZE = 150
@@ -41,7 +42,7 @@ class VoltmeterWidget(QtGui.QWidget):
                 dialog = ChannelWidget(channel,traces[channel])
                 dialogs[channel] = dialog
                 def on_finished(_):
-                    dialogs.pop(channel)
+                    dialogs.pop(channel).deleteLater()
                     self.activateWindow()
                 dialog.finished.connect(on_finished)
                 dialog.show()
