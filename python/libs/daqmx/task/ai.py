@@ -4,8 +4,6 @@ import numpy as np
 from time import clock
 class AITask(Task):
     def acquire_samples(self):
-        time = clock()
-        print 'start', clock() - time
         daqmx(
             dll.DAQmxStartTask,
             (

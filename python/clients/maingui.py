@@ -39,16 +39,7 @@ class MainWidget(QtGui.QWidget):
             widget.deleteLater()
         def on_connect(server_name):
             widget = LabelWidget(
-                server_name,
-                WIDGETS[
-                    server_name
-n                ](
-                    client.servers[
-                        mangle(
-                            server_name
-                        )
-                    ]
-                )
+                WIDGETS[server_name](client.servers[server_name])
             )
             widgets[server_name] = widget
             layout.addWidget(widget)
