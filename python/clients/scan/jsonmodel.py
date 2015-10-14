@@ -1,5 +1,6 @@
 from PySide import QtCore, QtGui
 from jsonnodes import KEY_COLUMN, VALUE_COLUMN, ADD_COLUMN, REMOVE_COLUMN, TYPE_COLUMN, COLUMNS, RootNode
+from util import byteify
 
 column_names = {
     KEY_COLUMN:'key',
@@ -22,7 +23,7 @@ class JsonModel(QtGui.QStandardItemModel):
         )
 
     def append_scan(self,json_scan):
-        self.root_node.append_scan(json_scan)
+        self.root_node.append_scan(byteify(json_scan))
 
     def create_scan(self):
         self.root_node.append_scan({})
