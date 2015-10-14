@@ -77,9 +77,9 @@ class ScanPlot(PlotItem):
             self.removeItem(item)
         if self.is_optimizing():
             self.addLegend()
-            self.curve = PlotDataItem(
+        self.curve = PlotDataItem(
                 name='data', pen=None, symbolSize=5, symbolPen=None, symbolBrush='F4F'
-            )
+        )
         self.addItem(self.curve)
         self.fit_curve = PlotDataItem(
             name='fit', pen={'color':'4FF','width':2}
@@ -276,6 +276,7 @@ class ScanExecWidget(QtGui.QWidget):
                 if scan_plot.is_optimizing():
                     yield scan_plot.optimize_input()
                 self.init_scan = True
+                self.scan_index += 1
             loop()
                 
         def on_toggled(state):
