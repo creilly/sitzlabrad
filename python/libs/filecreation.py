@@ -5,7 +5,7 @@ from datetime import datetime
 POOH_DATA_PATH = 'z:/data/pooh/'
 
 def get_datetime():
-    datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    return datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
 def get_filename(folders=None,description=None,extension='.dat'):
     if folders is None: 
