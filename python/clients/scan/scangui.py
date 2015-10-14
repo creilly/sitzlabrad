@@ -11,9 +11,12 @@ from scipy.optimize import curve_fit
 from jsonwidget import JsonWidget
 from jsonmodel import JsonModel
 from pyqtgraph import GraphicsWindow, PlotItem, PlotDataItem
+from labrad.wrappers import connectAsync
 
 from scandefs import *
 from scanitems import TestInput,TestScanInput,TestOutput
+from util import mangle
+from filecreation import get_datetime
 
 INPUTS = {
     TEST:TestInput,
@@ -24,6 +27,8 @@ OUTPUTS = {
 }
 
 FIT_POINTS = 100
+
+data_vault_dir = ['scans']
 
 class ScanPlot(PlotItem):
     def __init__(self,scan):
@@ -42,27 +47,29 @@ class ScanPlot(PlotItem):
                 'bottom':'%s (%s)' % (x_label,x_units),
                 'left':'%s (%s)' % (y_label,y_units),
             }
-        )        
-        self.optimize = scan[OPTIMIZE]
+        )
+        self.optimize = scan.get(OPTIMIZE,False)
+        self.save = scan.get(SAVE,False)
         self.scan = scan
 
     def start(self):
-        self.set_scan_items()
+        return self.set_scan_items()
 
     def restart(self):
-        return self.start()
-
+        return self.start()    
+    
+    @inlineCallbacks
     def set_scan_items(self):
         scan = self.scan
         self.input = INPUTS[
             scan[INPUT][CLASS]
         ](
-            **scan[INPUT][ARGS]
+            **mangle(scan[INPUT][ARGS])
         )
         self.output = OUTPUTS[
             scan[OUTPUT][CLASS]
         ](
-            **scan[OUTPUT][ARGS]
+            **mangle(scan[OUTPUT][ARGS])
         )
         self.x_arr = []
         self.y_arr = []
@@ -70,13 +77,37 @@ class ScanPlot(PlotItem):
             self.removeItem(item)
         if self.is_optimizing():
             self.addLegend()
-            self.fit_curve = PlotDataItem(
-                name='fit', pen={'color':'4FF','width':2}
+            self.curve = PlotDataItem(
+                name='data', pen=None, symbolSize=5, symbolPen=None, symbolBrush='F4F'
             )
-        self.curve = PlotDataItem(
-            name='data', pen=None, symbolSize=5, symbolPen=None, symbolBrush='F4F'
+        self.addItem(self.curve)
+        self.fit_curve = PlotDataItem(
+            name='fit', pen={'color':'4FF','width':2}
         )
-        self.addItem(self.curve)        
+        if self.is_saving():
+            cxn = yield connectAsync()
+            data_vault = cxn.data_vault
+            yield data_vault.cd(data_vault_dir)
+            yield data_vault.new(
+                scan.get(NAME,None),
+                [
+                    '%s [%s]' % (
+                        scan[INPUT].get(NAME,'input'),
+                        scan[INPUT].get(UNITS,'arb')
+                    )
+                ],
+                [
+                    '%s [%s]' % (
+                        scan[OUTPUT].get(NAME,'output'),
+                        scan[OUTPUT].get(UNITS,'arb')
+                    )
+                ]
+            )
+            yield data_vault.add_parameter(
+                'time',
+                get_datetime()
+            )
+            self.data_vault = data_vault
 
     def show_fit(self):
         self.addItem(self.fit_curve)
@@ -88,12 +119,17 @@ class ScanPlot(PlotItem):
             returnValue(False)
         self.x_arr.append(x)
         y = yield self.output.get_output()
+        if self.is_saving():
+            yield self.data_vault.add([x,y])
         self.y_arr.append(y)
         self.curve.setData(self.x_arr,self.y_arr)
         returnValue(True)        
 
     def is_optimizing(self):
         return self.optimize
+
+    def is_saving(self):
+        return self.save
 
     @inlineCallbacks
     def optimize_input(self):
@@ -233,14 +269,13 @@ class ScanExecWidget(QtGui.QWidget):
                     loop()
                     returnValue(None)
             if self.init_scan:
-                self.scan_iter = scan_plot.start()
+                self.scan_iter = yield scan_plot.start()
                 self.init_scan = False
             result = yield scan_plot.step()
             if not result:
                 if scan_plot.is_optimizing():
                     yield scan_plot.optimize_input()
                 self.init_scan = True
-                self.scan_index += 1
             loop()
                 
         def on_toggled(state):
