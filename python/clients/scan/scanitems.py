@@ -33,7 +33,7 @@ class ScanInput:
             start = sr[START]
             stop = sr[STOP]
             step = sr[STEP]
-            if sr[RELATIVE]:
+            if sr.get(RELATIVE,False):
                 delta = stop - start
                 current_input = yield self._get_input()
                 start = current_input - delta / 2
