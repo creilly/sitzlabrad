@@ -14,16 +14,18 @@ from pyqtgraph import GraphicsWindow, PlotItem, PlotDataItem
 from labrad.wrappers import connectAsync
 
 from scandefs import *
-from scanitems import TestInput,TestScanInput,TestOutput
+from scanitems import TestInput,TestScanInput,TestOutput, StepperMotorInput, VoltmeterOutput
 from util import mangle
 from filecreation import get_datetime
 
 INPUTS = {
     TEST:TestInput,
-    TEST_SCAN:TestScanInput
+    TEST_SCAN:TestScanInput,
+    STEPPER_MOTOR:StepperMotorInput    
 }
 OUTPUTS = {
-    TEST:TestOutput
+    TEST:TestOutput,
+    VOLTMETER:VoltmeterOutput
 }
 
 FIT_POINTS = 100
@@ -89,7 +91,7 @@ class ScanPlot(PlotItem):
             data_vault = cxn.data_vault
             yield data_vault.cd(data_vault_dir)
             yield data_vault.new(
-                scan.get(NAME,None),
+                scan.get(NAME,''),
                 [
                     '%s [%s]' % (
                         scan[INPUT].get(NAME,'input'),
