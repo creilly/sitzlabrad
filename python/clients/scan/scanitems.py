@@ -3,6 +3,8 @@ from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet import reactor
 import numpy as np
 from scandefs import *
+from steppermotorclient import StepperMotorClient
+from voltmeterclient import VoltmeterClient
 
 np.random.seed()
 
@@ -16,7 +18,7 @@ class LabradScanItem:
     def get_client(self):
         if self._d is not None:   
             self._client = yield self._d
-            self._d is None
+            self._d = None
         returnValue(self._client)
 
 # inheritors must implement self._get_input and self.set_input
@@ -58,9 +60,10 @@ class ScanInput:
                 returnValue(None)
 
 class StepperMotorInput(ScanInput,LabradScanItem):    
+    OVERSHOOT = 500
     def __init__(self,sm_name,scan_range):
-        ScanInput.__init__(self,scan_range)
         LabradScanItem.__init__(self)
+        ScanInput.__init__(self,scan_range)
         self.sm_name = sm_name
         
     @inlineCallbacks
@@ -77,6 +80,9 @@ class StepperMotorInput(ScanInput,LabradScanItem):
     @inlineCallbacks
     def set_input(self,input):
         smc = yield self.get_stepper_motor_client()
+        old_position = yield self._get_input()
+        if old_position > input:
+            yield smc.set_position(input-self.OVERSHOOT)
         yield smc.set_position(input)
 
 class DelayGeneratorInput(ScanInput,LabradScanItem):
@@ -118,7 +124,7 @@ class VoltmeterOutput(LabradScanItem):
     @inlineCallbacks
     def get_volt_meter_client(self):
         client = yield self.get_client()
-        returnValue(VoltmeterClient(self.channel,client.voltmeter))
+        returnValue(VoltmeterClient(client.voltmeter,self.channel))
 
     @inlineCallbacks
     def get_output(self):
