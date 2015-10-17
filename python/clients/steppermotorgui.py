@@ -12,10 +12,18 @@ from qtutils.labelwidget import LabelWidget
 
 CHUNK = 50
 RANGE = (-1000000,1000000)
+CHUNKS_DIR = ['','Clients','Stepper Motor','chunks']
             
 class StepperMotorWidget(QtGui.QWidget):
-    def __init__(self,sm_client):
+    def __init__(self,sm_client,chunk):
         QtGui.QWidget.__init__(self)
+        self.sm_client = sm_client
+        self.chunk = chunk
+        self.init_widget()
+
+    def init_widget(self):
+        sm_client = self.sm_client
+        chunk = self.chunk
         layout = QtGui.QVBoxLayout()
         self.setLayout(layout)
         position_label = QtGui.QLabel()
@@ -24,9 +32,7 @@ class StepperMotorWidget(QtGui.QWidget):
         position_spin = QtGui.QSpinBox()
         layout.addWidget(position_spin)
         position_spin.setRange(*RANGE)
-        sm_client.get_position().addCallback(
-            position_label.setNum
-            )
+        sm_client.get_position().addCallback(position_label.setNum)
         set_position_button = QtGui.QPushButton('set position')
         layout.addWidget(set_position_button)
         @inlineCallbacks
@@ -40,14 +46,14 @@ class StepperMotorWidget(QtGui.QWidget):
                 delta = requested_position - current_position
                 if delta is 0:
                     break
-                if abs(delta) < CHUNK:
+                if abs(delta) < chunk:
                     yield sm_client.set_position(requested_position)
                     break
                 else:
                     yield sm_client.set_position(
                         current_position + (
                             1 if delta > 0 else -1
-                            ) * CHUNK
+                            ) * chunk
                         )
         set_position_button.clicked.connect(on_clicked)
         stop_check = QtGui.QCheckBox('stop')
@@ -56,19 +62,33 @@ class StepperMotorWidget(QtGui.QWidget):
 class StepperMotorGroupWidget(QtGui.QWidget):
     def __init__(self,sm_server):
         QtGui.QWidget.__init__(self)
+        self.sm_server = sm_server
+        self.init_widget()
+
+    @inlineCallbacks
+    def init_widget(self):
+        sm_server = self.sm_server
         layout = QtGui.QHBoxLayout()
         self.setLayout(layout)
-        def on_stepper_motors(sm_names):
-            for name in sm_names:
-                layout.addWidget(
-                    LabelWidget(
-                        name,
-                        StepperMotorWidget(
-                            StepperMotorClient(name,sm_server)
-                        )
+        cxn = yield connectAsync()
+        registry = cxn.registry
+        yield registry.cd(CHUNKS_DIR)
+        _, chunk_keys = yield registry.dir()
+        chunks = {}
+        for chunk_key in chunk_keys:
+            chunk = yield registry.get(chunk_key)
+            chunks[chunk_key] = chunk
+        sm_names = yield sm_server.get_stepper_motors()
+        for name in sm_names:
+            layout.addWidget(
+                LabelWidget(
+                    name,
+                    StepperMotorWidget(
+                        StepperMotorClient(name,sm_server),
+                        chunks.get(name,CHUNK)
                     )
                 )
-        sm_server.get_stepper_motors().addCallback(on_stepper_motors)
+            )
     def closeEvent(self,event):
         event.accept()
         if reactor.running():
