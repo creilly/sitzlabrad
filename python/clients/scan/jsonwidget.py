@@ -1,5 +1,5 @@
 from PySide import QtCore, QtGui
-import json
+from util import load_json, dump_json
 
 class JsonWidget(QtGui.QWidget):
     def __init__(self,model):
@@ -53,7 +53,7 @@ class JsonWidget(QtGui.QWidget):
         def parse_file(filename):
             with open(filename,'r') as f:
                 try:
-                    json_object = json.load(f)
+                    json_object = load_json(f)
                     return (True, json_object)
                 except ValueError:
                     QtGui.QMessageBox.warning(
@@ -106,7 +106,7 @@ class JsonWidget(QtGui.QWidget):
             if filename is None:
                 return
             with open(filename,'w') as f:
-                f.write(json.dumps(json_object))
+                f.write(dump_json(json_object))
         save_button.clicked.connect(on_save)
         
         button_layout.addStretch()

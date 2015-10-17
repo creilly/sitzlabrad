@@ -1,3 +1,5 @@
+import json
+
 def mangle(d):
     return {
         key.replace(' ','_'):value 
@@ -13,3 +15,9 @@ def byteify(input):
         return input.encode('utf-8')
     else:
         return input
+
+def load_json(text):
+    return byteify(json.loads(text))
+
+def dump_json(json_object):
+    return json.dumps(json_object)

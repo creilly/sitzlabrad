@@ -1,5 +1,5 @@
 from PySide import QtGui, QtCore
-import json
+from util import load_json, dump_json
 
 class JsonItem(QtGui.QStandardItem):
     def __init__(self,text=None):
@@ -49,7 +49,7 @@ class ValueItem(JsonItem):
         self.setEditable(True)
         JsonItem.setData(
             self,
-            json.dumps(value),
+            dump_json(value),
             QtCore.Qt.DisplayRole
         )
     def setData(self,data,role):
@@ -62,7 +62,7 @@ class ValueItem(JsonItem):
             node = self.get_node()
             node.parent().replace_node(
                 node,
-                json.loads(text)
+                load_json(text)
             )
         except ValueError:
             self.model().invalid_json.emit()
