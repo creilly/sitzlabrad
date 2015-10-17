@@ -2,7 +2,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 
 class VoltmeterClient:
     def __init__(self,vm_server,channel):
-        self.vm_server = server
+        self.vm_server = vm_server
         self.channel = channel
 
     def get_sample(self):
