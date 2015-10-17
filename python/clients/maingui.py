@@ -13,6 +13,7 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet import reactor
 from labrad.wrappers import connectAsync
 from connectionmanager import ConnectionManager
+from functools import partial
 
 WIDGETS = {
     'Voltmeter':VoltmeterWidget,
@@ -32,30 +33,33 @@ class MainWidget(QtGui.QWidget):
         client = self.client
         connection_manager = ConnectionManager(client.manager)
         widgets = {}
-        server_names = yield connection_manager.get_connected_servers()
+        connected_servers = yield connection_manager.get_connected_servers()
+        servers = yield self.client.manager.servers()                
         def on_disconnect(server_name):
             widget = widgets.pop(server_name)
             layout.removeWidget(widget)
             widget.deleteLater()
+        @inlineCallbacks
         def on_connect(server_name):
-            widget = LabelWidget(
-                WIDGETS[server_name](client.servers[server_name])
-            )
+            yield client.refresh()
+            widget_class = WIDGETS[server_name]
+            server = client.servers[server_name]
+            widget = LabelWidget(server_name,widget_class(server))
             widgets[server_name] = widget
             layout.addWidget(widget)
         for server_name,server_widget in WIDGETS.items():
-            connection_manager.on_server_connect(server_name, lambda: on_connect(server_name))
-            connection_manager.on_server_disconnect(server_name, lambda: on_disconnect(server_name))
-            if server in server_names:
+            connection_manager.on_server_connect(
+                server_name,
+                partial(on_connect,server_name)
+            )
+            connection_manager.on_server_disconnect(
+                server_name,
+                partial(on_disconnect,server_name)
+            )
+            if server_name in connected_servers:
                 widget = LabelWidget(
                     server_name,
-                    server_widget(
-                        client.servers[
-                            mangle(
-                                server_name
-                            )
-                        ]
-                    )
+                    server_widget(client.servers[server_name])
                 )
                 widgets[server_name] = widget
                 layout.addWidget(widget)
