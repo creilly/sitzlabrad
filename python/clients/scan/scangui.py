@@ -265,11 +265,11 @@ class ScanExecWidget(QtGui.QWidget):
                     )
                     if button & QtGui.QMessageBox.Yes:
                         yield scan_plot.optimize_input()
-                    self.init_scan = True
-                    self.scan_index += 1
-                    self.skip_requested = False
-                    loop()
-                    returnValue(None)
+                self.init_scan = True
+                self.scan_index += 1
+                self.skip_requested = False
+                loop()
+                returnValue(None)
             if self.init_scan:
                 self.scan_iter = yield scan_plot.start()
                 self.init_scan = False
@@ -341,7 +341,7 @@ class ScanWidget(QtGui.QMainWindow):
 if __name__ == '__main__':
     def main():
         import json
-        with open('scans/test.json','r') as f:
+        with open('scans/crystals_scan.json','r') as f:
             scans = json.loads(f.read())
         scan_widget = ScanWidget(scans)
         container.append(scan_widget)
