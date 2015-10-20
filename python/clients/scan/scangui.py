@@ -14,18 +14,19 @@ from pyqtgraph import GraphicsWindow, PlotItem, PlotDataItem
 from labrad.wrappers import connectAsync
 
 from scandefs import *
-from scanitems import TestInput,TestScanInput,TestOutput, StepperMotorInput, VoltmeterOutput
+from scanitems import TestScanInput, TestOutput, StepperMotorInput, VoltmeterOutput, DelayGeneratorInput, VoltmeterMathOutput
 from util import mangle
 from filecreation import get_datetime
 
 INPUTS = {
-    TEST:TestInput,
-    TEST_SCAN:TestScanInput,
-    STEPPER_MOTOR:StepperMotorInput    
+    TEST:TestScanInput,
+    STEPPER_MOTOR:StepperMotorInput,
+    DELAY_GENERATOR:DelayGeneratorInput
 }
 OUTPUTS = {
     TEST:TestOutput,
-    VOLTMETER:VoltmeterOutput
+    VOLTMETER:VoltmeterOutput,
+    VOLTMETER_MATH:VoltmeterMathOutput
 }
 
 FIT_POINTS = 100
@@ -50,8 +51,9 @@ class ScanPlot(PlotItem):
                 'left':'%s (%s)' % (y_label,y_units),
             }
         )
-        self.optimize = scan.get(OPTIMIZE,False)
-        self.save = scan.get(SAVE,False)
+        self.optimizing = scan.get(OPTIMIZE,False)
+        self.saving = scan.get(SAVE,False)
+        self.returning = scan.get(RETURN,False)
         self.scan = scan
 
     def start(self):
@@ -68,6 +70,8 @@ class ScanPlot(PlotItem):
         ](
             **mangle(scan[INPUT][ARGS])
         )
+        if self.is_returning():
+            self._return_input = yield self.input._get_input()
         self.output = OUTPUTS[
             scan[OUTPUT][CLASS]
         ](
@@ -114,6 +118,9 @@ class ScanPlot(PlotItem):
     def show_fit(self):
         self.addItem(self.fit_curve)
 
+    def return_input(self):
+        return self.input.set_input(self._return_input)
+
     @inlineCallbacks
     def step(self):
         x = yield self.input.get_input()        
@@ -128,10 +135,13 @@ class ScanPlot(PlotItem):
         returnValue(True)        
 
     def is_optimizing(self):
-        return self.optimize
+        return self.optimizing
 
     def is_saving(self):
-        return self.save
+        return self.saving
+
+    def is_returning(self):
+        return self.returning
 
     @inlineCallbacks
     def optimize_input(self):
@@ -256,6 +266,7 @@ class ScanExecWidget(QtGui.QWidget):
                 returnValue(None)
             scan_plot = self.scan_plots[self.scan_index]
             if self.skip_requested:
+                optimizing = False
                 if scan_plot.is_optimizing():
                     button = QtGui.QMessageBox.question(
                         self,
@@ -264,7 +275,11 @@ class ScanExecWidget(QtGui.QWidget):
                         QtGui.QMessageBox.Yes | QtGui.QMessageBox.No
                     )
                     if button & QtGui.QMessageBox.Yes:
-                        yield scan_plot.optimize_input()
+                        optimizing = True
+                if optimizing:
+                    yield scan_plot.optimize_input()
+                elif scan_plot.is_returning():
+                    yield scan_plot.return_input()
                 self.init_scan = True
                 self.scan_index += 1
                 self.skip_requested = False
@@ -277,6 +292,8 @@ class ScanExecWidget(QtGui.QWidget):
             if not result:
                 if scan_plot.is_optimizing():
                     yield scan_plot.optimize_input()
+                elif scan_plot.is_returning():
+                    yield scan_plot.return_input()
                 self.init_scan = True
                 self.scan_index += 1
             loop()
@@ -341,7 +358,7 @@ class ScanWidget(QtGui.QMainWindow):
 if __name__ == '__main__':
     def main():
         import json
-        with open('scans/crystals_scan.json','r') as f:
+        with open('scans/tracking_scan.json','r') as f:
             scans = json.loads(f.read())
         scan_widget = ScanWidget(scans)
         container.append(scan_widget)

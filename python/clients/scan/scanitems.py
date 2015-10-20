@@ -5,6 +5,8 @@ import numpy as np
 from scandefs import *
 from steppermotorclient import StepperMotorClient
 from voltmeterclient import VoltmeterClient
+from delaygeneratorclient import DelayGeneratorClient
+from operator import add, sub, mul, div
 
 np.random.seed()
 
@@ -13,12 +15,19 @@ COUNT = 100
 class LabradScanItem:
     def __init__(self):
         self._d = connectAsync()
+        self._client_connecting = False
 
     @inlineCallbacks
     def get_client(self):
-        if self._d is not None:   
-            self._client = yield self._d
-            self._d = None
+        if self._d is not None:
+            if not self._client_connecting:
+                self._client_connecting = True
+                self._client_connecting_d = Deferred()
+                self._client = yield self._d
+                self._d = None
+                self._client_connecting_d.callback(None)
+            else:
+                yield self._client_connecting_d            
         returnValue(self._client)
 
 # inheritors must implement self._get_input and self.set_input
@@ -58,6 +67,9 @@ class ScanInput:
                 returnValue(input)
             else:
                 returnValue(None)
+
+    def _get_input(self):
+        return None
 
 class StepperMotorInput(ScanInput,LabradScanItem):    
     OVERSHOOT = 500
@@ -132,21 +144,34 @@ class VoltmeterOutput(LabradScanItem):
         output = yield vmc.get_average(self.shots)
         returnValue(output)
 
-class TestInput:    
-    def __init__(self):
-        self.count = 0
+class VoltmeterMathOutput(LabradScanItem):
+    ADD, SUBTRACT, MULTIPLY, DIVIDE = 'add','subtract','multiply','divide'
+    def __init__(self,formula,shots):
+        LabradScanItem.__init__(self)
+        self.formula = formula
+        self.shots = shots
 
-    def set_input(self,input):
-        d = Deferred()
-        reactor.callLater(2.,d.callback,None)
-        return d
+    @inlineCallbacks
+    def get_volt_meter_client(self,channel):
+        client = yield self.get_client()
+        returnValue(VoltmeterClient(client.voltmeter,channel))
 
-    def get_input(self):
-        self.count += 1
-        if self.count < COUNT:
-            return self.count
-        else:
-            return None
+    @inlineCallbacks
+    def get_output(self):
+        channel_1, operation, channel_2 = self.formula
+        vm1 = yield self.get_volt_meter_client(channel_1)
+        vm2 = yield self.get_volt_meter_client(channel_2)
+        d1 = vm1.get_average(self.shots)
+        d2 = vm2.get_average(self.shots)
+        v1 = yield d1
+        v2 = yield d2
+        result = {
+            self.ADD:add,
+            self.SUBTRACT:sub,
+            self.MULTIPLY:mul,
+            self.DIVIDE:div
+        }[operation](v1,v2)
+        returnValue(result)
 
 class TestOutput:
     def __init__(self):
