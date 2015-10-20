@@ -53,7 +53,7 @@ class JsonWidget(QtGui.QWidget):
         def parse_file(filename):
             with open(filename,'r') as f:
                 try:
-                    json_object = load_json(f)
+                    json_object = load_json(f.read())
                     return (True, json_object)
                 except ValueError:
                     QtGui.QMessageBox.warning(
