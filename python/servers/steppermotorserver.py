@@ -2,8 +2,10 @@ from labrad.server import LabradServer, setting, Signal
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import labrad
-from steppermotor import StepperMotor
+from steppermotor import DigitalStepperMotor, CounterStepperMotor, SetPositionStoppedException, DisabledException
 from daqmx.task.do import DOTask
+from daqmx.task.co import COTask
+from daqmx.task.ci import CITask
 from twisted.internet.threads import deferToThread
 
 """
@@ -23,20 +25,34 @@ timeout = 20
 
 NAME = 'Stepper Motor'
 REGISTRY_PATH = ['','Servers',NAME]
-STEP_TASK_NAME = 'step task name'
+
 DIR_TASK_NAME = 'direction task name'
 INIT_POS = 'initial position'
-BACKLASH = 'backlash'
-INIT_DIR = 'initial direction' # true:forwards, false:backwards
-DELAY = 'delay'
+
 ENABLE_TASK_NAME = 'enable task name'
 
+CLASS = 'class'
+DIGITAL = 'digital'
+COUNTER = 'counter'
+
+STEP_TASK_NAME = 'step task name'
+DELAY = 'delay'
+
+STEP_OUTPUT_TASK_NAME = 'step output task name'
+STEP_INPUT_TASK_NAME = 'step input task name'
+
 ON_NEW_POSITION = 'on_new_position'
+ON_BUSY_STATUS_CHANGED = 'on_busy_status_changed'
+ON_ENABLED_STATUS_CHANGED = 'on_enabled_status_changed'
+
+class StepperMotorBusyException(Exception): pass
 
 class StepperMotorServer(LabradServer):
     name = NAME    # Will be labrad name of server
 
     on_new_position = Signal(110,ON_NEW_POSITION,'(si)')
+    on_busy_status_changed = Signal(111,ON_BUSY_STATUS_CHANGED,'(sb)')
+    on_enabled_status_changed = Signal(112,ON_ENABLED_STATUS_CHANGED,'(sb)')
 
     @inlineCallbacks
     def initServer(self):  # Do initialization here
@@ -50,48 +66,111 @@ class StepperMotorServer(LabradServer):
             yield self.update_stepper_motor(stepper_motor)
         yield LabradServer.initServer(self)
 
+    @setting(17,stepper_motor_name='s',returns='b')
+    def is_enableable(self,c,stepper_motor_name):
+        return self.stepper_motors[stepper_motor_name].is_enableable()
+
+    @setting(15,stepper_motor_name='s',returns='b')
+    def is_enabled(self,c,stepper_motor_name):
+        return self.stepper_motors[stepper_motor_name].is_enabled()
+
+    @setting(16,stepper_motor_name='s',is_enabled='b')
+    def set_enabled(self,c,stepper_motor_name,is_enabled):
+        self.stepper_motors[stepper_motor_name].set_enabled(is_enabled)
+        self.on_enabled_status_changed((stepper_motor_name,is_enabled))
+
+    @setting(13,stepper_motor_name='s',returns='b')
+    def is_busy(self,c,stepper_motor_name):
+        return self.busy[stepper_motor_name]
+
     @setting(12,stepper_motor_name='s',returns='i')
     def get_position(self,c,stepper_motor_name):
         return self.stepper_motors[stepper_motor_name].get_position()
 
+    def set_busy_status(self,stepper_motor_name,busy_status):
+        self.busy[stepper_motor_name] = busy_status
+        self.on_busy_status_changed((stepper_motor_name,busy_status))
+
     @inlineCallbacks
     @setting(11,stepper_motor_name='s',position='i')
     def set_position(self,c,stepper_motor_name,position):
+        if self.busy[stepper_motor_name]:
+            raise StepperMotorBusyException
         sm = self.stepper_motors[stepper_motor_name]
-        yield deferToThread(
-            sm.set_position,
-            position
+        old_position = sm.get_position()
+        self.set_busy_status(stepper_motor_name,True)
+        try:
+            yield deferToThread(
+                sm.set_position,
+                position
             )
-        reg = self.client.registry
-        yield reg.cd(REGISTRY_PATH+[stepper_motor_name])
-        yield reg.set(INIT_POS,sm.get_position())
-        yield reg.set(INIT_DIR,sm.get_direction())
-        self.on_new_position((stepper_motor_name,position))
+            failed = False
+        except (SetPositionStoppedException,DisabledException), e:
+            failed = True
+        new_position = sm.get_position()
+        self.set_busy_status(stepper_motor_name,False)
+        if new_position != old_position:
+            reg = self.client.registry
+            yield reg.cd(REGISTRY_PATH+[stepper_motor_name])
+            yield reg.set(INIT_POS,int(new_position))
+            self.on_new_position((stepper_motor_name,new_position))
+        if failed:
+            raise e
+
+    @setting(14,stepper_motor_name='s')
+    def stop(self,c,stepper_motor_name):
+        self.stepper_motors[stepper_motor_name].stop()
 
     @inlineCallbacks
     def update_stepper_motor(self,stepper_motor):        
         reg = self.client.registry
         yield reg.cd(REGISTRY_PATH+[stepper_motor])
-        step_task_name = yield reg.get(STEP_TASK_NAME)
+        
+        dirs, keys = yield reg.dir()
+        
         dir_task_name = yield reg.get(DIR_TASK_NAME)
-        init_pos = yield reg.get(INIT_POS)
-        backlash = yield reg.get(BACKLASH)
-        init_dir = yield reg.get(INIT_DIR)
-        delay = yield reg.get(DELAY)
-        enable_task_name = yield reg.get(ENABLE_TASK_NAME)
-        self.stepper_motors[stepper_motor] = StepperMotor(
-            DOTask(step_task_name),
-            DOTask(dir_task_name),
-            init_pos,
-            backlash,
-            init_dir,
-            delay,
-            (
-                DOTask(enable_task_name) 
-                if enable_task_name is not None else 
-                None
-                )
+        dir_task = DOTask(dir_task_name)
+        
+        init_pos = yield reg.get(INIT_POS)        
+        
+        if ENABLE_TASK_NAME in keys:
+            enable_task_name = yield reg.get(ENABLE_TASK_NAME)
+            enable_task = DOTask(enable_task_name)
+        else:
+            enable_task = None
+
+        if CLASS in keys:
+            class_type = yield reg.get(CLASS)
+        else:
+            class_type = DIGITAL
+            
+        if class_type == DIGITAL:
+            step_task_name = yield reg.get(STEP_TASK_NAME)
+            step_task = DOTask(step_task_name)
+            
+            delay = yield reg.get(DELAY)
+            
+            sm = DigitalStepperMotor(
+                step_task,
+                delay,                
+                dir_task,
+                enable_task,
+                init_pos                
             )
+        if class_type == COUNTER:
+            step_output_task_name = yield reg.get(STEP_OUTPUT_TASK_NAME)
+            step_output_task = COTask(step_output_task_name)
+            step_input_task_name = yield reg.get(STEP_INPUT_TASK_NAME)
+            step_input_task = CITask(step_input_task_name)
+            
+            sm = CounterStepperMotor(
+                step_output_task,
+                step_input_task,
+                dir_task,
+                enable_task,
+                init_pos,
+            )
+        self.stepper_motors[stepper_motor] = sm
 
     @setting(10, returns='*s')
     def get_stepper_motors(self,c):
