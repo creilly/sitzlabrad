@@ -7,6 +7,7 @@
   "DAQmx_Val_CountDown": 10124,
   "DAQmx_Val_CountUp": 10128,
   "DAQmx_Val_Diff": 10106,
+  "DAQmx_Val_DoNotAllowRegen": 10158,
   "DAQmx_Val_ExtControlled": 10326,
   "DAQmx_Val_Falling": 10171,
   "DAQmx_Val_FiniteSamps": 10178,
@@ -22,5 +23,6 @@
   "DAQmx_Val_Seconds": 10364,
   "DAQmx_Val_Task_Commit": 3,
   "DAQmx_Val_Volts": 10348,
-  "DAQmx_Val_WaitInfinitely": -1.0
+  "DAQmx_Val_WaitInfinitely": -1.0,
+  "DAQmx_Write_RegenMode": 5203
 }
