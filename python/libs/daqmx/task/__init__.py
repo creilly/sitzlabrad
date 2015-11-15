@@ -1,5 +1,8 @@
 from daqmx import *
 
+class EmptyTaskException(Exception):
+    args = ['task must have at least one channel to determine type']
+
 class Task(object):
     """
     base class from which useful daqmx task
@@ -17,8 +20,8 @@ class Task(object):
             (
                 name, 
                 byref(handle)
-                )
             )
+        )
         self.handle = handle.value
         
     def add_channel(self,name):
@@ -30,8 +33,8 @@ class Task(object):
             (
                 self.handle, 
                 name
-                )
             )
+        )
 
     @staticmethod
     def get_global_tasks():
@@ -50,6 +53,31 @@ class Task(object):
         )
         return parseStringList(global_tasks.value)
 
+    def get_type(self):
+        channels = self.get_channels()
+        if not channels:
+            raise EmptyTaskException
+        return self.get_channel_type(self.get_channels[0])
+
+    def get_channel_type(self,channel):
+        channel_type = c_uint32(0)
+        daqmx(
+            DAQmxGetChanType,
+            (
+                self.handle, 
+                channel, 
+                byref(channel_type)
+            )
+        )
+        return {
+            constants['DAQmx_Val_AI']:cls.AI,
+            constants['DAQmx_Val_AO']:cls.AO,
+            constants['DAQmx_Val_DI']:cls.DI,
+            constants['DAQmx_Val_DO']:cls.DO,
+            constants['DAQmx_Val_CI']:cls.CI,
+            constants['DAQmx_Val_CO']:cls.CO,
+        }[channel_type.value]
+
     @classmethod
     def get_global_channels(cls):
         """
@@ -67,31 +95,11 @@ class Task(object):
             )
         )
         global_channels = parseStringList(global_channels.value)
-        if task_type is None:
-            return global_channels
         channel_dict = {
             task_type:[] for task_type in (cls.AI,cls.AO,cls.DI,cls.DO)
-            }
+        }
         for channel in global_channels:
-            channel_type = c_uint32(0)
-            daqmx(
-                DAQmxGetChanType,
-                (
-                    self.handle, 
-                    channel, 
-                    byref(channel_type)
-                    )
-                )
-            channel_dict[
-                {
-                    constants['DAQmx_Val_AI']:cls.AI,
-                    constants['DAQmx_Val_AO']:cls.AO,
-                    constants['DAQmx_Val_DI']:cls.DI,
-                    constants['DAQmx_Val_DO']:cls.DO,
-                    constants['DAQmx_Val_CI']:cls.CI,
-                    constants['DAQmx_Val_CO']:cls.CO,
-                    }[channel_type.value]
-                ].append(channel)
+            channel_dict[self.get_channel_type(channel)].append(channel)
         return channel_dict
 
     def get_channels(self):
@@ -112,10 +120,23 @@ class Task(object):
         return parseStringList(channels.value)
 
 
-    def clearTask(self):
+    def clear_task(self):
         daqmx(
             dll.DAQmxClearTask,
             (
                 self.handle,
             )
         )
+
+    def is_done(self):
+        is_done = c_uint32(0)
+        daqmx(
+            dll.DAQmxIsTaskDone,
+            (
+                self.handle,
+                byref(is_done)
+            )                
+        )
+        return bool(is_done.value)
+
+    
