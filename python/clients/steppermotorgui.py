@@ -34,13 +34,22 @@ class StepperMotorWidget(QtGui.QWidget):
         set_position_button = QtGui.QPushButton('set position')
         layout.addWidget(set_position_button)
         @inlineCallbacks
-        def on_clicked():
-            requested_position = position_spin.value()
+        def on_set_position():
+            is_busy = yield sm_client.is_busy()
+            if is_busy:
+                QtGui.QMessageBox.warning(self,'stepper motor busy','stepper motor is currently busy')
+                returnValue(None)
+            is_enabled = yield sm_client.is_enabled()
+            if not is_enabled:
+                QtGui.QMessageBox.warning(self,'stepper motor disabled','stepper motor is currently disabled')
+                returnValue(None)
+            requested_position = position_spin.value()            
             try:
                 yield sm_client.set_position(requested_position)
             except Error, e:
                 QtGui.QMessageBox.warning(self,'error',str(e))
-        set_position_button.clicked.connect(on_clicked)
+        set_position_button.clicked.connect(on_set_position)
+        
         stop_button = QtGui.QPushButton('stop')
         stop_button.clicked.connect(sm_client.stop)
         layout.addWidget(stop_button)
