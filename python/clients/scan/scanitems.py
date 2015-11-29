@@ -29,7 +29,7 @@ class LabradScanItem:
             else:
                 yield self._client_connecting_d            
         returnValue(self._client)
-
+        
 # inheritors must implement self._get_input and self.set_input
 class ScanInput:
     def __init__(self,scan_range):
@@ -39,7 +39,7 @@ class ScanInput:
     @inlineCallbacks
     def init_range(self):
         sr = self.scan_range
-        scan_class = sr[CLASS]        
+        scan_class = sr.get(CLASS,RANGE)
         if scan_class == RANGE:
             start = sr[START]
             stop = sr[STOP]
@@ -71,7 +71,7 @@ class ScanInput:
     def _get_input(self):
         return None
 
-class StepperMotorInput(ScanInput,LabradScanItem):    
+class StepperMotorInput(ScanInput,LabradScanItem):
     OVERSHOOT = 500
     def __init__(self,sm_name,scan_range):
         LabradScanItem.__init__(self)
@@ -145,7 +145,13 @@ class VoltmeterOutput(LabradScanItem):
         returnValue(output)
 
 class VoltmeterMathOutput(LabradScanItem):
-    ADD, SUBTRACT, MULTIPLY, DIVIDE = 'add','subtract','multiply','divide'
+    ADD, SUBTRACT, MULTIPLY, DIVIDE = '+','-','*','/'
+    operations = {
+        ADD:add,
+        SUBTRACT:sub,
+        MULTIPLY:mul,
+        DIVIDE:div
+    }
     def __init__(self,formula,shots):
         LabradScanItem.__init__(self)
         self.formula = formula
@@ -156,22 +162,35 @@ class VoltmeterMathOutput(LabradScanItem):
         client = yield self.get_client()
         returnValue(VoltmeterClient(client.voltmeter,channel))
 
+    # reverse polish notation evaluator
     @inlineCallbacks
     def get_output(self):
-        channel_1, operation, channel_2 = self.formula
-        vm1 = yield self.get_volt_meter_client(channel_1)
-        vm2 = yield self.get_volt_meter_client(channel_2)
-        d1 = vm1.get_average(self.shots)
-        d2 = vm2.get_average(self.shots)
-        v1 = yield d1
-        v2 = yield d2
-        result = {
-            self.ADD:add,
-            self.SUBTRACT:sub,
-            self.MULTIPLY:mul,
-            self.DIVIDE:div
-        }[operation](v1,v2)
-        returnValue(result)
+        deferreds = {}
+        for entry in self.formula:
+            if type(entry) is not str:
+                continue
+            if entry in self.operations:
+                continue
+            if entry in deferreds:
+                continue
+            vmc = yield self.get_volt_meter_client(entry)
+            deferreds[entry] = vmc.get_average(self.shots)
+        voltages = {}
+        for channel, deferred in deferreds.items():
+            voltage = yield deferred
+            voltages[channel] = voltage
+        stack = []
+        for entry in self.formula:
+            if entry in self.operations:
+                v1 = stack.pop()
+                v2 = stack.pop()
+                stack.append(self.operations[entry](v2,v1))
+            else:
+                if type(entry) is str:
+                    stack.append(voltages[entry])
+                else:
+                    stack.append(entry)
+        returnValue(stack.pop())
 
 class TestOutput:
     def __init__(self):
