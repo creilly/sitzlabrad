@@ -7,7 +7,7 @@ POOH_DATA_PATH = 'z:/data/pooh/'
 def get_datetime():
     return datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
-def get_filename(folders=None,description=None,extension='.dat'):
+def get_filename(folders=None,description=None,extension='dat'):
     if folders is None: 
         folders = []
     filepath = path.join(
@@ -20,17 +20,12 @@ def get_filename(folders=None,description=None,extension='.dat'):
     time = datetime.now().strftime("%H%M%S")
     return os.path.join(
         filepath,
-        (
-            '_'.join(
-                (
-                    time,
-                    description,
-                    extension
-                ) if description is not None else (
-                    time,
-                    extension
-                )
-            ) 
+        '%s.%s' % (
+            (
+                '%s_%s' % (time,description)
+            ) if description is not None else
+            time,
+            extension
         )
     )
 def get_file_dialog():
