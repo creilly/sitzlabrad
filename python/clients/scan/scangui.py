@@ -79,6 +79,7 @@ class ScanPlot(PlotItem):
         # are we returning to input's original position after scan?
         self.returning = scan.get(RETURN,False)
         self.scan = scan
+        self.__parent = parent
 
     # performs set up for scan
     def start(self):
@@ -95,8 +96,10 @@ class ScanPlot(PlotItem):
             cxn = yield connectAsync()
             # get handle to data vault
             data_vault = cxn.data_vault
+            # list of folders (trunk to leaf) for dataset directory
+            save_dir = scan.get(SAVE_DIR,[])
             # go to scans dir in dv
-            yield data_vault.cd(data_vault_dir)
+            yield data_vault.cd(data_vault_dir+save_dir,True)
             independent_variables = [
                 '%s [%s]' % (
                     scan[INPUT].get(NAME,'input'),
@@ -109,9 +112,20 @@ class ScanPlot(PlotItem):
                     output.get(UNITS,'arb')
                 ) for output in outputs
             ]
+            save_name = scan.get(SAVE_NAME,None)
+            default_name = text=scan.get(NAME,'')
+            if save_name is None:
+                save_name, result = QtGui.QInputDialog.getText(
+                    self.__parent,
+                    'enter dataset name',
+                    'enter title for data vault dataset',
+                    text = default_name
+                )
+                if not result:
+                    save_name = default_name
             # create new dataset                
             yield data_vault.new(
-                scan.get(NAME,''),
+                str(save_name),
                 independent_variables,
                 dependent_variables
             )
@@ -392,8 +406,10 @@ class ScanExecWidget(QtGui.QWidget):
             # get handle to current scan object
             scan_plot = self.scan_plots[self.scan_index]
             if self.restart_requested or self.skip_requested or self.stop_requested:
-                # finish scan object
-                yield end_scan_object(confirm=True)
+                # only clean up if scan already started
+                if not self.init_scan:
+                    # finish scan object
+                    yield end_scan_object(confirm=True)
                 if self.stop_requested:
                     # set state to stopped
                     end_scan()

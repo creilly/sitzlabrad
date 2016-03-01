@@ -72,7 +72,7 @@ class ScanInput:
         return None
 
 class StepperMotorInput(ScanInput,LabradScanItem):
-    OVERSHOOT = 500
+    OVERSHOOT = 150
     def __init__(self,sm_name,scan_range):
         LabradScanItem.__init__(self)
         ScanInput.__init__(self,scan_range)
@@ -94,7 +94,11 @@ class StepperMotorInput(ScanInput,LabradScanItem):
         smc = yield self.get_stepper_motor_client()
         old_position = yield self._get_input()
         if old_position > input:
-            yield smc.set_position(input-self.OVERSHOOT)
+            yield smc.set_position(
+                input-{
+                    'lid':3000,
+                }.get(self.sm_name,self.OVERSHOOT)
+            )
         yield smc.set_position(input)
 
 class DelayGeneratorInput(ScanInput,LabradScanItem):
