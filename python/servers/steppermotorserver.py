@@ -26,24 +26,26 @@ timeout = 20
 NAME = 'Stepper Motor'
 REGISTRY_PATH = ['','Servers',NAME]
 
-DIR_TASK_NAME = 'direction task name'
+DIR_CHANNEL = 'direction channel'
 INIT_POS = 'initial position'
 
-ENABLE_TASK_NAME = 'enable task name'
+ENABLE_CHANNEL = 'enable channel'
 
 CLASS = 'class'
 DIGITAL = 'digital'
 COUNTER = 'counter'
 
-STEP_TASK_NAME = 'step task name'
+STEP_CHANNEL = 'step channel'
 DELAY = 'delay'
 
-STEP_OUTPUT_TASK_NAME = 'step output task name'
-STEP_INPUT_TASK_NAME = 'step input task name'
+STEP_OUTPUT_CHANNEL = 'step output channel'
+STEP_INPUT_CHANNEL = 'step input channel'
 
 ON_NEW_POSITION = 'on_new_position'
 ON_BUSY_STATUS_CHANGED = 'on_busy_status_changed'
 ON_ENABLED_STATUS_CHANGED = 'on_enabled_status_changed'
+
+UPDATE_INTERVAL = .1
 
 class StepperMotorBusyException(Exception): pass
 
@@ -100,6 +102,27 @@ class StepperMotorServer(LabradServer):
         old_position = sm.get_position()
         self.set_busy_status(stepper_motor_name,True)
         try:
+            def update_position(_):
+                if self.busy[stepper_motor_name]:
+                    self.on_new_position(
+                        (
+                            stepper_motor_name,
+                            old_position + {
+                                sm.FORWARDS:1,
+                                sm.BACKWARDS:-1
+                            }[sm.get_direction()]*sm.get_pulses()
+                        )
+                    )
+                    reactor.callLater(
+                        UPDATE_INTERVAL,
+                        update_position,
+                        None
+                    )
+            reactor.callLater(
+                UPDATE_INTERVAL,
+                update_position,
+                None
+            )
             yield deferToThread(
                 sm.set_position,
                 position
@@ -109,11 +132,15 @@ class StepperMotorServer(LabradServer):
             failed = True
         new_position = sm.get_position()
         self.set_busy_status(stepper_motor_name,False)
-        if new_position != old_position:
-            reg = self.client.registry
-            yield reg.cd(REGISTRY_PATH+[stepper_motor_name])
-            yield reg.set(INIT_POS,int(new_position))
-            self.on_new_position((stepper_motor_name,new_position))
+        reg = self.client.registry
+        yield reg.cd(REGISTRY_PATH+[stepper_motor_name])
+        yield reg.set(INIT_POS,int(new_position))
+        self.on_new_position(
+            (
+                stepper_motor_name,
+                new_position
+            )
+        )
         if failed:
             raise e
 
@@ -127,15 +154,14 @@ class StepperMotorServer(LabradServer):
         yield reg.cd(REGISTRY_PATH+[stepper_motor])
         
         dirs, keys = yield reg.dir()
-        
-        dir_task_name = yield reg.get(DIR_TASK_NAME)
-        dir_task = DOTask(dir_task_name)
+        dir_channel = yield reg.get(DIR_CHANNEL)
+        dir_task = DOTask(dir_channel)
         
         init_pos = yield reg.get(INIT_POS)        
         
-        if ENABLE_TASK_NAME in keys:
-            enable_task_name = yield reg.get(ENABLE_TASK_NAME)
-            enable_task = DOTask(enable_task_name)
+        if ENABLE_CHANNEL in keys:
+            enable_channel = yield reg.get(ENABLE_CHANNEL)
+            enable_task = DOTask(enable_channel)
         else:
             enable_task = None
 
@@ -145,8 +171,8 @@ class StepperMotorServer(LabradServer):
             class_type = DIGITAL
             
         if class_type == DIGITAL:
-            step_task_name = yield reg.get(STEP_TASK_NAME)
-            step_task = DOTask(step_task_name)
+            step_channel = yield reg.get(STEP_CHANNEL)
+            step_task = DOTask(step_channel)
             
             delay = yield reg.get(DELAY)
             
@@ -155,13 +181,13 @@ class StepperMotorServer(LabradServer):
                 delay,                
                 dir_task,
                 enable_task,
-                init_pos                
+                init_pos
             )
         if class_type == COUNTER:
-            step_output_task_name = yield reg.get(STEP_OUTPUT_TASK_NAME)
-            step_output_task = COTask(step_output_task_name)
-            step_input_task_name = yield reg.get(STEP_INPUT_TASK_NAME)
-            step_input_task = CITask(step_input_task_name)
+            step_output_channel = yield reg.get(STEP_OUTPUT_CHANNEL)
+            step_output_task = COTask(step_output_channel)
+            step_input_channel = yield reg.get(STEP_INPUT_CHANNEL)
+            step_input_task = CITask(step_input_channel)
             
             sm = CounterStepperMotor(
                 step_output_task,

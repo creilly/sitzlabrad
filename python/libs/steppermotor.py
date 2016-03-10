@@ -72,11 +72,9 @@ class StepperMotor:
         if delta is 0: return
         self.set_direction(delta > 0)
         pulses = self.generate_pulses(abs(delta))
-        print pulses, delta
         self.position = old_position + (
             1 if delta > 0 else -1 
         ) * pulses
-        print 'position', self.position
         if pulses != abs(delta):
             raise SetPositionStoppedException
 
@@ -84,6 +82,9 @@ class StepperMotor:
         return self.position
     
     def generate_pulses(self,pulses):
+        raise NotImplementedError
+
+    def get_pulses(self):
         raise NotImplementedError
 
     def stop(self):
@@ -113,10 +114,11 @@ class DigitalStepperMotor(StepperMotor):
         self.step_task = step_task
         self.delay = delay
         self.stopped = False
+        self.pulses = 0                
 
     def generate_pulses(self,pulses):
         self.stopped = False
-        generated = 0
+        self.pulses = 0
         for pulse in range(pulses):
             if self.stopped:
                 self.stopped = False
@@ -125,8 +127,11 @@ class DigitalStepperMotor(StepperMotor):
             sleep(self.delay / 2.)
             self.step_task.write_state(False)
             sleep(self.delay / 2.)
-            generated += 1
-        return generated
+            self.pulses += 1
+        return self.pulses
+
+    def get_pulses(self):
+        return self.pulses
 
     def stop(self):
         self.stopped = True
@@ -145,9 +150,9 @@ class CounterStepperMotor(StepperMotor):
         ):
         StepperMotor.__init__(
             self,
-            dir_task, 
+            dir_task,
             enable_task,
-            init_pos, 
+            init_pos,
             init_enable,
             enable_level,
             forwards_level
@@ -159,13 +164,14 @@ class CounterStepperMotor(StepperMotor):
         self.step_input_task.start_counting()
         try:
             self.step_output_task.generate_pulses(pulses)
-            generated = pulses
         except GenerationStoppedException:
-            generated = self.step_input_task.get_count()
+            pass
+        generated = self.step_input_task.get_count()
         self.step_input_task.stop_counting()
         return generated
 
     def stop(self):
-        print 'stop start'
         self.step_output_task.stop_generation()
-        print 'stop end'
+
+    def get_pulses(self):
+        return self.step_input_task.get_count()
