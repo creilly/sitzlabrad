@@ -11,23 +11,23 @@ class Task(object):
     base class from which useful daqmx task
     classes inherit.
     """
-    AI,AO,DI,DO,CI,CO,UNKNOWN=0,1,2,3,4,5,6
-    TASK_TYPES = (AI,AO,DI,DO,CI,CO,UNKNOWN)
+    AI,AO,DI,DO,CI,CO,EMPTY=0,1,2,3,4,5,6
+    TASK_TYPES = (AI,AO,DI,DO,CI,CO,EMPTY)
 
-    def __init__(self,name,channel=None):
+    def __init__(self,*channels):
         """
         load a global task into memory and optionally initialize with global channel
         """
         handle = c_uint32(0)
         daqmx(
-            dll.DAQmxLoadTask,
+            dll.DAQmxCreateTask,
             (
-                name, 
+                None,
                 byref(handle)
             )
         )
         self.handle = handle.value
-        if channel is not None:
+        for channel in channels:
             self.add_channel(channel)
         
     def add_channel(self,name):
@@ -58,7 +58,7 @@ class Task(object):
             )
         )
         global_tasks = parseStringList(global_tasks.value)
-        task_dict = {task_type:[] for task_type in cls.TASK_TYPES}        
+        task_dict = {task_type:[] for task_type in cls.TASK_TYPES}
         for task_name in global_tasks:
             task = cls(task_name)
             task_dict[task.get_type()].append(task_name)
@@ -67,7 +67,7 @@ class Task(object):
     def get_type(self):
         channels = self.get_channels()
         if not channels:
-            return self.UNKNOWN
+            return self.EMPTY
         return self.get_channel_type(channels[0])
 
     @classmethod
@@ -152,7 +152,7 @@ class Task(object):
             raise UnitsException()
         units = {}
         for channel in self.get_channels():
-            units = c_int32(0)
+            unit_type = c_int32(0)
             daqmx(
                 {
                     self.AI:dll.DAQmxGetAIVoltageUnits,
@@ -161,10 +161,10 @@ class Task(object):
                 (
                     self.handle,
                     channel,
-                    byref(units)
+                    byref(unit_type)
                 )
             )
-            if units.value is constants['DAQmx_Val_Volts']:
+            if unit_type.value == constants['DAQmx_Val_Volts']:
                 units[channel] = 'volts'
             else:
                 scale_name = create_string_buffer(BUF_SIZE)
@@ -212,4 +212,4 @@ class Task(object):
         )
         return bool(is_done.value)
 
-print Task('analog output task','qms output').get_units()
+

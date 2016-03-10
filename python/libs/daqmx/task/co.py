@@ -9,6 +9,14 @@ class GenerationStoppedException(Exception):
 class COTask(Task):
     def __init__(self,name):
         Task.__init__(self,name)
+        daqmx(
+            dll.DAQmxCfgImplicitTiming,
+            (
+                self.handle,
+                constants['DAQmx_Val_FiniteSamps'],
+                c_uint64(200)
+            )
+        )
         self.stopped = False
     """
 
