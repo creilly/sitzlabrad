@@ -138,13 +138,13 @@ class VoltmeterOutput(LabradScanItem):
         self.shots = shots
 
     @inlineCallbacks
-    def get_volt_meter_client(self):
+    def get_voltmeter_client(self):
         client = yield self.get_client()
         returnValue(VoltmeterClient(client.voltmeter,self.channel))
 
     @inlineCallbacks
     def get_output(self):
-        vmc = yield self.get_volt_meter_client()
+        vmc = yield self.get_voltmeter_client()
         output = yield vmc.get_average(self.shots)
         returnValue(output)
 
@@ -162,7 +162,7 @@ class VoltmeterMathOutput(LabradScanItem):
         self.shots = shots
 
     @inlineCallbacks
-    def get_volt_meter_client(self,channel):
+    def get_voltmeter_client(self,channel):
         client = yield self.get_client()
         returnValue(VoltmeterClient(client.voltmeter,channel))
 
@@ -177,7 +177,7 @@ class VoltmeterMathOutput(LabradScanItem):
                 continue
             if entry in deferreds:
                 continue
-            vmc = yield self.get_volt_meter_client(entry)
+            vmc = yield self.get_voltmeter_client(entry)
             deferreds[entry] = vmc.get_average(self.shots)
         voltages = {}
         for channel, deferred in deferreds.items():
@@ -195,6 +195,56 @@ class VoltmeterMathOutput(LabradScanItem):
                 else:
                     stack.append(entry)
         returnValue(stack.pop())
+
+# measures peak height
+class AugerOutput(LabradScanItem):
+    INPUT_CHANNEL = 'auger input'
+    OUTPUT_CHANNEL = 'auger output'
+    UPDATE_RATE = 30. # response time of hv supply in ev/s
+    def __init__(self,bottom_energy,top_energy,duration):
+        LabradScanItem.__init__(self)
+        self.bottom_energy = bottom_energy
+        self.top_energy = top_energy
+        self.initialized = self.initialize(duration)
+        
+    @inlineCallbacks
+    def initialize(self,duration):
+        client = yield self.get_client()
+        yield client.voltmeter.set_active_channels([self.INPUT_CHANNEL])
+        yield client.voltmeter.set_sampling_duration(duration)
+
+    @inlineCallbacks
+    def get_output(self):
+        yield self.initialized
+        client = yield self.get_client()
+        ao = yield self.set_energy(self.bottom_energy)
+        bottom_signal = yield self.get_signal()
+        print bottom_signal
+        ao = yield self.set_energy(self.top_energy)
+        top_signal = yield self.get_signal()
+        print top_signal
+        returnValue(top_signal-bottom_signal)
+
+    @inlineCallbacks
+    def get_signal(self):
+        client = yield self.get_client()
+        # yield client.voltmeter.get_sample(self.INPUT_CHANNEL) # clear last value
+        signal = yield client.voltmeter.get_sample(self.INPUT_CHANNEL)
+        returnValue(signal)
+
+    @inlineCallbacks
+    def set_energy(self,energy):
+        client = yield self.get_client()
+        previous_energy = yield client.analog_output.get_value(self.OUTPUT_CHANNEL)
+        delta_energy = abs(energy-previous_energy)
+        client.analog_output.set_value(self.OUTPUT_CHANNEL,energy)
+        d = Deferred()
+        reactor.callLater(
+            delta_energy / self.UPDATE_RATE,
+            d.callback,
+            None
+        )
+        yield d
 
 class TestOutput:
     def __init__(self):

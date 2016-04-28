@@ -15,7 +15,7 @@ from labrad.wrappers import connectAsync
 from labrad.types import Error
 
 from scandefs import *
-from scanitems import TestScanInput, TestOutput, StepperMotorInput, VoltmeterOutput, DelayGeneratorInput, VoltmeterMathOutput
+from scanitems import AugerOutput, TestScanInput, TestOutput, StepperMotorInput, VoltmeterOutput, DelayGeneratorInput, VoltmeterMathOutput
 from util import mangle
 from filecreation import get_datetime
 
@@ -30,7 +30,8 @@ INPUTS = {
 OUTPUTS = {
     TEST:TestOutput,
     VOLTMETER:VoltmeterOutput,
-    VOLTMETER_MATH:VoltmeterMathOutput
+    VOLTMETER_MATH:VoltmeterMathOutput,
+    AUGER:AugerOutput
 }
 
 # number of points in optimized fit curve

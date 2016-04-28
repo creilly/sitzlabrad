@@ -20,4 +20,5 @@ STEPPER_MOTOR = 'stepper motor'
 VOLTMETER = 'voltmeter'
 VOLTMETER_MATH = 'voltmeter math'
 DELAY_GENERATOR = 'delay generator'
+AUGER = 'auger'
 
