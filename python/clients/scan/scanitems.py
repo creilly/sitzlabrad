@@ -29,7 +29,7 @@ class LabradScanItem:
             else:
                 yield self._client_connecting_d            
         returnValue(self._client)
-
+        
 # inheritors must implement self._get_input and self.set_input
 class ScanInput:
     def __init__(self,scan_range):
@@ -39,7 +39,7 @@ class ScanInput:
     @inlineCallbacks
     def init_range(self):
         sr = self.scan_range
-        scan_class = sr[CLASS]        
+        scan_class = sr.get(CLASS,RANGE)
         if scan_class == RANGE:
             start = sr[START]
             stop = sr[STOP]
@@ -71,8 +71,8 @@ class ScanInput:
     def _get_input(self):
         return None
 
-class StepperMotorInput(ScanInput,LabradScanItem):    
-    OVERSHOOT = 500
+class StepperMotorInput(ScanInput,LabradScanItem):
+    OVERSHOOT = 150
     def __init__(self,sm_name,scan_range):
         LabradScanItem.__init__(self)
         ScanInput.__init__(self,scan_range)
@@ -94,7 +94,11 @@ class StepperMotorInput(ScanInput,LabradScanItem):
         smc = yield self.get_stepper_motor_client()
         old_position = yield self._get_input()
         if old_position > input:
-            yield smc.set_position(input-self.OVERSHOOT)
+            yield smc.set_position(
+                input-{
+                    'lid':3000,
+                }.get(self.sm_name,self.OVERSHOOT)
+            )
         yield smc.set_position(input)
 
 class DelayGeneratorInput(ScanInput,LabradScanItem):
@@ -134,44 +138,113 @@ class VoltmeterOutput(LabradScanItem):
         self.shots = shots
 
     @inlineCallbacks
-    def get_volt_meter_client(self):
+    def get_voltmeter_client(self):
         client = yield self.get_client()
         returnValue(VoltmeterClient(client.voltmeter,self.channel))
 
     @inlineCallbacks
     def get_output(self):
-        vmc = yield self.get_volt_meter_client()
+        vmc = yield self.get_voltmeter_client()
         output = yield vmc.get_average(self.shots)
         returnValue(output)
 
 class VoltmeterMathOutput(LabradScanItem):
-    ADD, SUBTRACT, MULTIPLY, DIVIDE = 'add','subtract','multiply','divide'
+    ADD, SUBTRACT, MULTIPLY, DIVIDE = '+','-','*','/'
+    operations = {
+        ADD:add,
+        SUBTRACT:sub,
+        MULTIPLY:mul,
+        DIVIDE:div
+    }
     def __init__(self,formula,shots):
         LabradScanItem.__init__(self)
         self.formula = formula
         self.shots = shots
 
     @inlineCallbacks
-    def get_volt_meter_client(self,channel):
+    def get_voltmeter_client(self,channel):
         client = yield self.get_client()
         returnValue(VoltmeterClient(client.voltmeter,channel))
 
+    # reverse polish notation evaluator
     @inlineCallbacks
     def get_output(self):
-        channel_1, operation, channel_2 = self.formula
-        vm1 = yield self.get_volt_meter_client(channel_1)
-        vm2 = yield self.get_volt_meter_client(channel_2)
-        d1 = vm1.get_average(self.shots)
-        d2 = vm2.get_average(self.shots)
-        v1 = yield d1
-        v2 = yield d2
-        result = {
-            self.ADD:add,
-            self.SUBTRACT:sub,
-            self.MULTIPLY:mul,
-            self.DIVIDE:div
-        }[operation](v1,v2)
-        returnValue(result)
+        deferreds = {}
+        for entry in self.formula:
+            if type(entry) is not str:
+                continue
+            if entry in self.operations:
+                continue
+            if entry in deferreds:
+                continue
+            vmc = yield self.get_voltmeter_client(entry)
+            deferreds[entry] = vmc.get_average(self.shots)
+        voltages = {}
+        for channel, deferred in deferreds.items():
+            voltage = yield deferred
+            voltages[channel] = voltage
+        stack = []
+        for entry in self.formula:
+            if entry in self.operations:
+                v1 = stack.pop()
+                v2 = stack.pop()
+                stack.append(self.operations[entry](v2,v1))
+            else:
+                if type(entry) is str:
+                    stack.append(voltages[entry])
+                else:
+                    stack.append(entry)
+        returnValue(stack.pop())
+
+# measures peak height
+class AugerOutput(LabradScanItem):
+    INPUT_CHANNEL = 'auger input'
+    OUTPUT_CHANNEL = 'auger output'
+    UPDATE_RATE = 30. # response time of hv supply in ev/s
+    def __init__(self,bottom_energy,top_energy,duration):
+        LabradScanItem.__init__(self)
+        self.bottom_energy = bottom_energy
+        self.top_energy = top_energy
+        self.initialized = self.initialize(duration)
+        
+    @inlineCallbacks
+    def initialize(self,duration):
+        client = yield self.get_client()
+        yield client.voltmeter.set_active_channels([self.INPUT_CHANNEL])
+        yield client.voltmeter.set_sampling_duration(duration)
+
+    @inlineCallbacks
+    def get_output(self):
+        yield self.initialized
+        client = yield self.get_client()
+        ao = yield self.set_energy(self.bottom_energy)
+        bottom_signal = yield self.get_signal()
+        print bottom_signal
+        ao = yield self.set_energy(self.top_energy)
+        top_signal = yield self.get_signal()
+        print top_signal
+        returnValue(top_signal-bottom_signal)
+
+    @inlineCallbacks
+    def get_signal(self):
+        client = yield self.get_client()
+        # yield client.voltmeter.get_sample(self.INPUT_CHANNEL) # clear last value
+        signal = yield client.voltmeter.get_sample(self.INPUT_CHANNEL)
+        returnValue(signal)
+
+    @inlineCallbacks
+    def set_energy(self,energy):
+        client = yield self.get_client()
+        previous_energy = yield client.analog_output.get_value(self.OUTPUT_CHANNEL)
+        delta_energy = abs(energy-previous_energy)
+        client.analog_output.set_value(self.OUTPUT_CHANNEL,energy)
+        d = Deferred()
+        reactor.callLater(
+            delta_energy / self.UPDATE_RATE,
+            d.callback,
+            None
+        )
+        yield d
 
 class TestOutput:
     def __init__(self):

@@ -1,5 +1,6 @@
 from PySide import QtCore, QtGui
 from util import load_json, dump_json
+import os
 
 class JsonWidget(QtGui.QWidget):
     def __init__(self,model):
@@ -48,46 +49,49 @@ class JsonWidget(QtGui.QWidget):
             return {
                 READ:QtGui.QFileDialog.getOpenFileName,
                 WRITE:QtGui.QFileDialog.getSaveFileName
-            }[mode](self)[0]
+            }[mode](self,dir='scans',filter='*.json')[0]
 
         def parse_file(filename):
+            def fail():
+                failure = (False,None)
+                QtGui.QMessageBox.warning(
+                    self,
+                    'invalid json file',
+                    'file was not list of json objects'
+                )
+                return failure            
             with open(filename,'r') as f:
                 try:
                     json_object = load_json(f.read())
+                    if type(json_object) is not list:
+                        return fail()
                     return (True, json_object)
-                except ValueError:
-                    QtGui.QMessageBox.warning(
-                        self,
-                        'invalid json file',
-                        'file was not list of json objects'
-                    )
-                    return (False, None)
-
-        def get_scans_from_file():
-            failure = (False,None)
-            filename = get_file()
-            if filename is None:
-                return failure
-            succeeded, json_object = parse_file(filename)
-            if not succeeded:
-                return failure
-            return (True,json_object)
+                except ValueError:                    
+                    return fail()
 
         load_button = QtGui.QPushButton('load')
         button_layout.addWidget(load_button)
         def on_load():
-            succeeded, json_scans = get_scans_from_file()
+            filename = get_file(mode=READ)
+            if filename is None:
+                return
+            succeeded, json_scans = parse_file(filename)
             if not succeeded:
                 return
             model.removeRows(0,model.rowCount())
             for json_scan in json_scans:
-                model.append_scan(json_scan)            
+                model.append_scan(json_scan)
+            update_filename_label(filename)
+        self.load_scan = on_load
         load_button.clicked.connect(on_load)
 
         add_button = QtGui.QPushButton('add')
         button_layout.addWidget(add_button)
         def on_add():
-            succeeded, json_scans = get_scans_from_file()
+            filename = get_file(mode=READ)
+            if filename is None:
+                return
+            succeeded, json_scans = parse_file(filename)
             if not succeeded:
                 return
             for json_scan in json_scans:
@@ -107,10 +111,16 @@ class JsonWidget(QtGui.QWidget):
                 return
             with open(filename,'w') as f:
                 f.write(dump_json(json_object))
+            update_filename_label(filename)
+
         save_button.clicked.connect(on_save)
         
         button_layout.addStretch()
 
+        def update_filename_label(filename):
+            filename_label.setText(os.path.basename(filename))
+        filename_label = QtGui.QLabel('unnamed')
+        button_layout.addWidget(filename_label)
 if __name__ == '__main__':
     import sys
     from jsonmodel import JsonModel

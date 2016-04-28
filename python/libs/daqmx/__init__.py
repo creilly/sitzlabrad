@@ -34,7 +34,7 @@ def daqmx(f,args):
     if result != SUCCESS:
         error = create_string_buffer(BUF_SIZE)
         dll.DAQmxGetErrorString(result,error,BUF_SIZE)
-        raise DAQmxException(error.value)
+        raise DAQmxException(result,error.value)
 
 def get_devices():
     """

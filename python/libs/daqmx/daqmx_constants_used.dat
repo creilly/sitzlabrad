@@ -1,12 +1,20 @@
 {
+  "DAQmx_Val_AI": 10100,
+  "DAQmx_Val_AO": 10102,
   "DAQmx_Val_Acquired_Into_Buffer": 1,
   "DAQmx_Val_Auto": -1,
+  "DAQmx_Val_CI": 10131,
+  "DAQmx_Val_CO": 10132,
   "DAQmx_Val_Cfg_Default": -1,
   "DAQmx_Val_ChanForAllLines": 1,
   "DAQmx_Val_ContSamps": 10123,
   "DAQmx_Val_CountDown": 10124,
   "DAQmx_Val_CountUp": 10128,
+  "DAQmx_Val_DI": 10151,
+  "DAQmx_Val_DO": 10153,
   "DAQmx_Val_Diff": 10106,
+  "DAQmx_Val_DigEdge": 10150,
+  "DAQmx_Val_DoNotAllowRegen": 10158,
   "DAQmx_Val_ExtControlled": 10326,
   "DAQmx_Val_Falling": 10171,
   "DAQmx_Val_FiniteSamps": 10178,
@@ -22,5 +30,6 @@
   "DAQmx_Val_Seconds": 10364,
   "DAQmx_Val_Task_Commit": 3,
   "DAQmx_Val_Volts": 10348,
-  "DAQmx_Val_WaitInfinitely": -1.0
+  "DAQmx_Val_WaitInfinitely": -1.0,
+  "DAQmx_Write_RegenMode": 5203
 }

@@ -1,4 +1,6 @@
 from twisted.internet.defer import inlineCallbacks, returnValue
+ON_ACTIVE_CHANNELS_CHANGED = 210
+ON_SAMPLING_DURATION_CHANGED = 211
 
 class VoltmeterClient:
     def __init__(self,vm_server,channel):

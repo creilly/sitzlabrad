@@ -2,7 +2,7 @@ import os
 from os import path
 from datetime import datetime
 
-MOLECULE_DATA_PATH = './'
+default_directory = os.environ.get('DATA','./') # default to working dir
 
 def get_datetime():
     return datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
@@ -10,8 +10,10 @@ def get_datetime():
 def get_filename(directory=None,folders=None,description=None,extension='.dat'):
     if folders is None: 
         folders = []
+    if directory is None:
+        directory = default_directory
     filepath = path.join(
-        MOLECULE_DATA_PATH if directory is None else directory,
+        default_directory,
         datetime.now().strftime("%Y-%m-%d"),
         *folders
     )
