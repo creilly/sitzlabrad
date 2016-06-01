@@ -152,21 +152,49 @@ class Task(object):
             raise UnitsException()
         units = {}
         for channel in self.get_channels():
+            measurement_type = c_int32(0)
+            daqmx(
+                {
+                    self.AI:dll.DAQmxGetAIMeasType,
+                    self.AO:dll.DAQmxGetAOOutputType
+                }[task_type],
+                (
+                    self.handle,
+                    channel,
+                    byref(measurement_type)
+                )
+            )
+            measurement_type = measurement_type.value
             unit_type = c_int32(0)
             daqmx(
                 {
-                    self.AI:dll.DAQmxGetAIVoltageUnits,
-                    self.AO:dll.DAQmxGetAOVoltageUnits,
-                }[task_type],                
+                    constants['DAQmx_Val_Voltage']:{
+                        self.AI:dll.DAQmxGetAIVoltageUnits,
+                        self.AO:dll.DAQmxGetAOVoltageUnits,
+                    }[task_type],
+                    constants['DAQmx_Val_Current']:{
+                        self.AI:dll.DAQmxGetAICurrentUnits,
+                        self.AO:dll.DAQmxGetAOCurrentUnits,
+                    }[task_type],
+                    constants['DAQmx_Val_Temp_TC']:dll.DAQmxGetAITempUnits
+                }[measurement_type],
                 (
                     self.handle,
                     channel,
                     byref(unit_type)
                 )
             )
-            if unit_type.value == constants['DAQmx_Val_Volts']:
-                units[channel] = 'volts'
-            else:
+            unit_type = unit_type.value
+            unit_types = {
+                constants['DAQmx_Val_Volts']:'volts',
+                constants['DAQmx_Val_Amps']:'amps',
+                constants['DAQmx_Val_DegC']:'degs C',
+                constants['DAQmx_Val_DegF']:'degs F',
+                constants['DAQmx_Val_Kelvins']:'degs K',
+            }
+            if unit_type in unit_types:
+                units[channel] = unit_types[unit_type]
+            elif unit_type == constants['DAQmx_Val_FromCustomScale']:
                 scale_name = create_string_buffer(BUF_SIZE)
                 daqmx(
                     {
@@ -190,6 +218,8 @@ class Task(object):
                     )
                 )
                 units[channel] = scaled_units.value
+            else:
+                units[channel] = 'arb'
         return units
             
 

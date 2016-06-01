@@ -109,7 +109,7 @@ class VoltmeterServer(LabradServer):
             self._set_active_channels(channels)
     @setting(14, channel='s', returns='s')
     def get_units(self,c,channel):
-        return self.task.get_units()[channel]
+        return AITask(channel).get_units()[channel]
 
     @setting(15, duration = 'v')
     def set_sampling_duration(self,c,duration):

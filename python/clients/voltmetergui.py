@@ -101,7 +101,11 @@ class VoltmeterWidget(QtGui.QWidget):
         bold_font = QtGui.QFont(font)
         bold_font.setWeight(QtGui.QFont.Bold)
 
+        units_d = {} 
+
         for channel in available_channels:
+            units = yield vm.get_units(channel)
+            units_d[channel] = units
             list_item = QtGui.QListWidgetItem(channel)
             list_item.setFont(font)                
             list_item.setData(CHANNEL,channel)
@@ -145,7 +149,7 @@ class VoltmeterWidget(QtGui.QWidget):
                 dialogs[channel].activateWindow()
             else:
                 item.setFont(bold_font)
-                dialog = ChannelWidget(channel,traces[channel])
+                dialog = ChannelWidget(channel,traces[channel],units=units_d[channel])
                 dialogs[channel] = dialog
                 def on_finished(_):
                     item.setFont(font)
@@ -269,13 +273,13 @@ class VoltmeterWidget(QtGui.QWidget):
             reactor.stop()
 
 class ChannelWidget(QtGui.QDialog):
-    def __init__(self,channel,trace):
+    def __init__(self,channel,trace,units):
         QtGui.QDialog.__init__(self)
         layout = QtGui.QVBoxLayout()
         self.setLayout(layout)
         plot_widget = PlotWidget(
             title='%s trace' % channel, 
-            labels={'left':'volts'}
+            labels={'left':units}
                     )
         layout.addWidget(plot_widget)
         plot = plot_widget.plot(trace)
