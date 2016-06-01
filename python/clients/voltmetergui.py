@@ -9,7 +9,6 @@ from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet import reactor
 from labrad.wrappers import connectAsync
 from qtutils.labelwidget import LabelWidget
-
 CHANNEL = 999
 TRACE_SIZE = 150
 class VoltmeterWidget(QtGui.QWidget):
@@ -20,10 +19,10 @@ class VoltmeterWidget(QtGui.QWidget):
     @inlineCallbacks
     def init_widget(self):
         vm = self.vm_server
-        
+        client = yield connectAsync()
         layout = QtGui.QHBoxLayout()
         self.setLayout(layout)
-        
+
         active_layout = QtGui.QVBoxLayout()
         layout.addLayout(active_layout)
         
@@ -33,7 +32,7 @@ class VoltmeterWidget(QtGui.QWidget):
                 'active channels',
                 active_channels_widget
             )
-        )
+        )        
 
         active_controls_layout = QtGui.QHBoxLayout()
         active_layout.addLayout(active_controls_layout)
@@ -57,10 +56,10 @@ class VoltmeterWidget(QtGui.QWidget):
         inactive_controls_layout = QtGui.QHBoxLayout()
         inactive_layout.addLayout(inactive_controls_layout)
 
-        inactive_controls_layout.addStretch()
-
         add_button = QtGui.QPushButton('add')
         inactive_controls_layout.addWidget(add_button)
+
+        inactive_controls_layout.addStretch()
 
         general_controls_layout = QtGui.QVBoxLayout()
         layout.addLayout(general_controls_layout)
@@ -164,7 +163,7 @@ class VoltmeterWidget(QtGui.QWidget):
                 acw.item(index).data(CHANNEL)
                 for index in range(acw.count())
             ]
-            for channel in active_channels:
+            for channel in map(str,active_channels):
                 packet.get_sample(channel,key=channel)
             try:
                 samples = yield packet.send()
@@ -205,7 +204,7 @@ class VoltmeterWidget(QtGui.QWidget):
                 )
             ]
             active_channels.append(channel)
-            vm.set_active_channels(active_channels)
+            vm.set_active_channels(map(str,active_channels))
         add_button.clicked.connect(on_add)
         def on_remove():
             channel = active_channels_widget.currentItem().data(CHANNEL)
@@ -216,7 +215,7 @@ class VoltmeterWidget(QtGui.QWidget):
                 )
             ]
             active_channels.remove(channel)
-            vm.set_active_channels(active_channels)
+            vm.set_active_channels(map(str,active_channels))
         remove_button.clicked.connect(on_remove)
 
         def on_sampling_duration(sampling_duration):
