@@ -22,17 +22,22 @@ class ConnectionManager:
     def _on_server_connect(self,_,msg):
         server = msg[1]
         if server in self.connect_callbacks:         
-            for callback in self.connect_callbacks[server]:
-                callback()
+            self.connect_callbacks[server]()
         
     def _on_server_disconnect(self,_,msg):
         server = msg[1]
         if server in self.disconnect_callbacks:            
-            for callback in self.disconnect_callbacks[server]:
-                callback()
+            self.disconnect_callbacks[server]()
         
     def on_server_connect(self,server,callback):
-        self.connect_callbacks.setdefault(server,[]).append(callback)
+        if callback is not None:
+            self.connect_callbacks[server]=callback
+        else:
+            self.connect_callbacks.pop(server)
 
     def on_server_disconnect(self,server,callback):
-        self.disconnect_callbacks.setdefault(server,[]).append(callback)
+        if callback is not None:
+            self.disconnect_callbacks[server]=callback
+        else:
+            self.disconnect_callbacks.pop(server)
+
