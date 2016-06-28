@@ -199,8 +199,11 @@ class VoltmeterMathWidget(QtGui.QWidget):
                 packet.get_sample(channel)
             for shot in range(shots):
                 response = yield packet.send()
-                for channel, voltage in zip(channels,response.get_sample):
-                    voltages[channel]+=voltage/shots
+                if len(channels) is 1:
+                    voltages[channels[0]]+=response.get_sample/shots
+                elif len(channels) > 1:
+                    for channel, voltage in zip(channels,response.get_sample):
+                        voltages[channel]+=voltage/shots                
             stack = []
             for type, entry in self.formula:
                 if type is OPERATION_TYPE:
