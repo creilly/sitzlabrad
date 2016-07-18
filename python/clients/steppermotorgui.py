@@ -13,6 +13,8 @@ from qtutils.labelwidget import LabelWidget
 from functools import partial
 
 RANGE = (-1000000,1000000)
+
+LOCKED, HAS_LOCK, UNLOCKED = 0,1,2
             
 class StepperMotorWidget(QtGui.QWidget):
     def __init__(self,sm_client):
@@ -62,6 +64,44 @@ class StepperMotorWidget(QtGui.QWidget):
         sm_client.is_busy().addCallback(update_busy_status)
         sm_client.on_busy_status_changed(update_busy_status)
         layout.addWidget(busy_label)
+
+        lock_label = QtGui.QLabel()
+        def update_lock_state(lock_state):
+            if lock_state is LOCKED:
+                set_position_button.setEnabled(False)
+                lock_label.setText('locked')
+            elif lock_state is UNLOCKED:
+                set_position_button.setEnabled(True)
+                lock_label.setText('unlocked')
+            elif lock_state is HAS_LOCK:
+                set_position_button.setEnabled(True)
+                lock_label.setText('has lock')
+        sm_client.on_set_position_locked(
+            partial(
+                update_lock_state,
+                LOCKED
+            )
+        )
+        sm_client.on_set_position_unlocked(
+            partial(
+                update_lock_state,
+                UNLOCKED
+            )
+        )
+        sm_client.on_set_position_lock_obtained(
+            partial(
+                update_lock_state,
+                HAS_LOCK
+            )
+        )
+        def on_has_lock(has_lock):
+            if has_lock is None:
+                update_lock_state(UNLOCKED)
+            elif has_lock:
+                update_lock_state(HAS_LOCK)
+            else:
+                update_lock_state(LOCKED)
+        layout.addWidget(locked_label)
 
         def on_is_enableable(is_enableable):
             if is_enableable:

@@ -49,7 +49,7 @@ VOLTMETER_CHANNELS = (TEMPERATURE,EMISSION_CURRENT)
 
 FILAMENT_CONTROL = 'filament control output'
 
-class AnalogOutputServer(LabradServer):
+class HeaterServer(LabradServer):
     name = NAME
 
     on_feedback_state_changed = Signal(110,ON_FEEDBACK_STATE_CHANGED,'s')

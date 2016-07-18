@@ -1,4 +1,5 @@
 from labrad.server import LabradServer, setting, Signal
+from lockserver import lockable_setting, LockServer
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import labrad
@@ -49,7 +50,7 @@ UPDATE_INTERVAL = .1
 
 class StepperMotorBusyException(Exception): pass
 
-class StepperMotorServer(LabradServer):
+class StepperMotorServer(LockServer):
     name = NAME    # Will be labrad name of server
 
     on_new_position = Signal(110,ON_NEW_POSITION,'(si)')
@@ -93,8 +94,8 @@ class StepperMotorServer(LabradServer):
         self.busy[stepper_motor_name] = busy_status
         self.on_busy_status_changed((stepper_motor_name,busy_status))
 
+    @lockable_setting(11,stepper_motor_name='s',position='i')
     @inlineCallbacks
-    @setting(11,stepper_motor_name='s',position='i')
     def set_position(self,c,stepper_motor_name,position):
         if self.busy[stepper_motor_name]:
             raise StepperMotorBusyException
