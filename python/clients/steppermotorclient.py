@@ -1,4 +1,4 @@
-from twisted.internet.deferred import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks
 
 class StepperMotorClient:
     LOCKED, HAS_LOCK, UNLOCKED = 0,1,2
@@ -23,22 +23,11 @@ class StepperMotorClient:
         sm_server.on_setting_unlocked.connect(
             self._on_setting_unlocked
         )
-        p = sm_server.packet()
-        p.is_setting_locked(sm_server.set_position.ID)
-        p.has_setting_lock(sm_server.set_position.ID)        
-        self.lock_state_d = p.send()
-        self.lock_state = None
         self.on_new_position_cb = None
         self.on_busy_status_changed_cb = None
         self.on_enabled_status_changed_cb = None
-        self.on_set_position_locked_cb = None
-        self.on_set_position_unlocked_cb = None
-        self.on_set_position_lock_obtained_cb = None
-
-    def get_lock_state(self):
-        if self.lock_state is None:
-            results = yield self.lock_state_d
-            lock_state
+        self.on_locked_cb = None
+        self.on_unlocked_cb = None
 
     def _on_new_position(self,c,msg):
         cb = self.on_new_position_cb
@@ -67,40 +56,34 @@ class StepperMotorClient:
     def on_enabled_status_changed(self,cb):
         self.on_enabled_status_changed_cb = cb
 
+    def is_locked(self):
+        return self.sm_server.is_setting_locked(self.sm_server.set_position.ID)
+
+    def has_lock(self):
+        return self.sm_server.has_setting_lock(self.sm_server.set_position.ID)
+
     def _on_setting_locked(self,c,msg):
         setting_id = msg[0]
         if setting_id == self.sm_server.set_position.ID:
-            self._is_locked = True
-            owning_context_id = msg[1]            
-            self._has_lock = owning_context_id == c.ID:
-            if self._has_lock:
-                if self.on_set_position_lock_obtained_cb is not None:
-                    self.on_set_position_lock_obtained_cb()
-            else:
-                if self.on_set_position_locked_cb is not None:
-                    self.on_set_position_locked_cb()
+            if self.on_locked_cb is not None:
+                self.on_locked_cb()
             
     def _on_setting_unlocked(self,c,msg):
-        setting_id = msg[0]
+        setting_id = msg
         if setting_id == self.sm_server.set_position.ID:
-            self._is_locked = False
-            self._has_lock = None
-            if self.on_set_position_unlocked_cb is not None:
-                self.on_set_position_unlocked_cb()
+            if self.on_unlocked_cb is not None:
+                self.on_unlocked_cb()
 
-    def on_set_position_lock_obtained(self,cb):
-        self.on_set_position_lock_obtained_cb = cb
+    def on_locked(self,cb):
+        self.on_locked_cb = cb
 
-    def on_set_position_locked(self,cb):
-        self.on_set_position_locked_cb = cb
+    def on_unlocked(self,cb):
+        self.on_unlocked_cb = cb
 
-    def on_set_position_unlocked(self,cb):
-        self.on_set_position_unlocked_cb = cb
-
-    def request_lock(self):
+    def lock(self):
         return self.sm_server.lock_setting(self.sm_server.set_position.ID)
 
-    def release_lock(self):
+    def unlock(self):
         return self.sm_server.unlock_setting(self.sm_server.set_position.ID)
 
     def is_enableable(self):

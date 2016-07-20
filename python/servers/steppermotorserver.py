@@ -1,5 +1,5 @@
 from labrad.server import LabradServer, setting, Signal
-from lockserver import lockable_setting, LockServer
+from lockserver import LockServer, lockable_setting
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import labrad
@@ -93,10 +93,10 @@ class StepperMotorServer(LockServer):
     def set_busy_status(self,stepper_motor_name,busy_status):
         self.busy[stepper_motor_name] = busy_status
         self.on_busy_status_changed((stepper_motor_name,busy_status))
-
+        
     @lockable_setting(11,stepper_motor_name='s',position='i')
-    @inlineCallbacks
     def set_position(self,c,stepper_motor_name,position):
+        print 'here sp'
         if self.busy[stepper_motor_name]:
             raise StepperMotorBusyException
         sm = self.stepper_motors[stepper_motor_name]

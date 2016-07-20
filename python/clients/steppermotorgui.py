@@ -14,8 +14,6 @@ from functools import partial
 
 RANGE = (-1000000,1000000)
 
-LOCKED, HAS_LOCK, UNLOCKED = 0,1,2
-            
 class StepperMotorWidget(QtGui.QWidget):
     def __init__(self,sm_client):
         QtGui.QWidget.__init__(self)
@@ -24,17 +22,21 @@ class StepperMotorWidget(QtGui.QWidget):
 
     def init_widget(self):
         sm_client = self.sm_client
-        layout = QtGui.QVBoxLayout()
+        
+        layout = QtGui.QVBoxLayout()        
         self.setLayout(layout)
+        
         position_label = QtGui.QLabel()
         layout.addWidget(position_label)
         sm_client.on_new_position(position_label.setNum)
+        
         position_spin = QtGui.QSpinBox()
         layout.addWidget(position_spin)
         position_spin.setRange(*RANGE)
         sm_client.get_position().addCallback(position_label.setNum)
         set_position_button = QtGui.QPushButton('set position')
         layout.addWidget(set_position_button)
+        
         @inlineCallbacks
         def on_set_position():
             is_busy = yield sm_client.is_busy()
@@ -49,8 +51,53 @@ class StepperMotorWidget(QtGui.QWidget):
             try:
                 yield sm_client.set_position(requested_position)
             except Error, e:
-                QtGui.QMessageBox.warning(self,'error',str(e))
+                QtGui.QMessageBox.warning(self,'error',e.msg)
         set_position_button.clicked.connect(on_set_position)
+
+        lock_label = QtGui.QLabel()
+        @inlineCallbacks
+        def update_lock_state(is_locked):
+            if is_locked:
+                try:
+                    has_lock = yield sm_client.has_lock()
+                except Error, e:
+                    QtGui.QMessageBox.warning(self,'error',e.msg)
+                    sm_client.is_locked().addCallback(update_lock_state)
+                lock_label.setText('has lock' if has_lock else 'locked')
+            else:
+                lock_label.setText('unlocked')
+        sm_client.on_locked(
+            partial(
+                update_lock_state,
+                True
+            )
+        )
+        sm_client.on_unlocked(
+            partial(
+                update_lock_state,
+                False
+            )
+        )
+        layout.addWidget(lock_label)
+        sm_client.is_locked().addCallback(update_lock_state)
+
+        @inlineCallbacks
+        def change_lock_state(locking):
+            try:
+                if locking:
+                    yield sm_client.lock()
+                else:
+                    yield sm_client.unlock()
+            except Error, e:
+                QtGui.QMessageBox.warning(self,'error',e.msg)
+        
+        lock_button = QtGui.QPushButton('lock')
+        lock_button.clicked.connect(partial(change_lock_state,True))
+        layout.addWidget(lock_button)
+        
+        unlock_button = QtGui.QPushButton('unlock')
+        unlock_button.clicked.connect(partial(change_lock_state,False))
+        layout.addWidget(unlock_button)
         
         stop_button = QtGui.QPushButton('stop')
         stop_button.clicked.connect(sm_client.stop)
@@ -64,44 +111,6 @@ class StepperMotorWidget(QtGui.QWidget):
         sm_client.is_busy().addCallback(update_busy_status)
         sm_client.on_busy_status_changed(update_busy_status)
         layout.addWidget(busy_label)
-
-        lock_label = QtGui.QLabel()
-        def update_lock_state(lock_state):
-            if lock_state is LOCKED:
-                set_position_button.setEnabled(False)
-                lock_label.setText('locked')
-            elif lock_state is UNLOCKED:
-                set_position_button.setEnabled(True)
-                lock_label.setText('unlocked')
-            elif lock_state is HAS_LOCK:
-                set_position_button.setEnabled(True)
-                lock_label.setText('has lock')
-        sm_client.on_set_position_locked(
-            partial(
-                update_lock_state,
-                LOCKED
-            )
-        )
-        sm_client.on_set_position_unlocked(
-            partial(
-                update_lock_state,
-                UNLOCKED
-            )
-        )
-        sm_client.on_set_position_lock_obtained(
-            partial(
-                update_lock_state,
-                HAS_LOCK
-            )
-        )
-        def on_has_lock(has_lock):
-            if has_lock is None:
-                update_lock_state(UNLOCKED)
-            elif has_lock:
-                update_lock_state(HAS_LOCK)
-            else:
-                update_lock_state(LOCKED)
-        layout.addWidget(locked_label)
 
         def on_is_enableable(is_enableable):
             if is_enableable:

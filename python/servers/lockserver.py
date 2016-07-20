@@ -1,5 +1,7 @@
-from labrad.decorators import setting, Setting
-from labrad.server import LabradServer, Signal
+from labrad.decorators import Setting
+from labrad.server import LabradServer, Signal, setting
+import functools
+import inspect
 
 LOCKABLE = '_lockable'
 
@@ -11,11 +13,15 @@ IS_SETTING_LOCKED_ID = 412
 
 HAS_SETTING_LOCK_ID = 413
 
-IS_SETTING_LOCKABLE_ID = 413
+IS_SETTING_LOCKABLE_ID = 414
 
-ON_SETTING_LOCKED_ID = 414
+OWNING_CONTEXT_ID = 415
 
-ON_SETTING_UNLOCKED_ID = 415
+GET_CONTEXT_ID = 416
+
+ON_SETTING_LOCKED_ID = 417
+
+ON_SETTING_UNLOCKED_ID = 418
 
 ON_SETTING_LOCKED_NAME = 'on_setting_locked'
 
@@ -116,26 +122,37 @@ class SettingNotLockedException(Exception):
                 setting_id                
             )
         )
+        
+class LockableSetting(Setting):
+    def __init__(self, func, lr_ID, lr_name, returns, unflatten, **params):        
+        Setting.__init__(self, func, lr_ID, lr_name, returns, unflatten, **params)
+        func = self.func
+        this = self
+        def wrapped(self,c,*args,**kwargs):
+            if not self._can_access_setting(c.ID,this.ID):
+                raise LockedException(this.ID,this.name,c.ID,self._owning_context(this.ID))
+            return func(self,c,*args,**kwargs)
+        self.func = wrapped
 
-def lockable_setting(setting_id, setting_name=None, returns=[], unflatten=True, **params):
-    def decorator(f):        
-        def h(self,c,*args,**kwargs):
-            handler = Setting(
-                f,
-                setting_id,
-                setting_name,
-                returns,
-                unflatten,
-                **params
-            )            
-            if not self._can_access_setting(c.ID,handler.ID):
-                raise LockedException(c.ID,handler.ID,handler.name)
-            return f(self,c,*args,**kwargs)                
-        setattr(h,LOCKABLE,None)
-        return setting(setting_id, setting_name, returns, unflatten, **params)(h)
+def lockable_setting(lr_ID, lr_name=None, returns=[], unflatten=True, **params):
+    def decorator(func):
+        try:
+            handler = LockableSetting(func, lr_ID, lr_name, returns, unflatten, **params)
+            func = handler.func  # might have gotten wrapped with inlineCallbacks
+            func.ID = handler.ID
+            func.name = handler.name
+            func.accepts = handler.accepts
+            func.returns = handler.returns
+            func.handleRequest = handler.handleRequest
+            func.getRegistrationInfo = handler.getRegistrationInfo
+            setattr(func,LOCKABLE,None)
+            return func
+        except Exception:
+            print 'Error in setting {} ({}):'.format(func.__name__, lr_ID)
+            raise
     return decorator
-
-def LockServer(LabradServer):
+    
+class LockServer(LabradServer):
     on_setting_locked = Signal(
         ON_SETTING_LOCKED_ID,
         ON_SETTING_LOCKED_NAME,
@@ -147,10 +164,10 @@ def LockServer(LabradServer):
         'w'
     )
     def __init__(self):
-        self._locked_settings = {}
+        self.locked_settings = {}
         LabradServer.__init__(self)
 
-    @setting(LOCK_SETTING_ID,setting_id='w')
+    @setting(LOCK_SETTING_ID,setting_id='w',returns=[])
     def lock_setting(self,c,setting_id):    
         if not hasattr(
                 self.settings[setting_id],
@@ -160,18 +177,18 @@ def LockServer(LabradServer):
                 setting_id,
                 self.settings[setting_id].name,
             )
-        if setting_id in self._locked_settings:
+        if setting_id in self.locked_settings:
             raise SettingAlreadyLockedException(
                 setting_id,
                 self.settings[setting_id].name,
                 c.ID,
-                self._locked_settings[setting_id]
+                self.locked_settings[setting_id]
             )
         self._lock_setting(c.ID,setting_id)
 
     def _lock_setting(self,context_id,setting_id):
         self.locked_settings[setting_id]=context_id
-        self.on_setting_locked(setting_id,context_id)
+        self.on_setting_locked((setting_id,context_id))
 
     @setting(UNLOCK_SETTING_ID,setting_id='w')
     def unlock_setting(self,c,setting_id):
@@ -198,7 +215,7 @@ def LockServer(LabradServer):
         return setting_id in self.locked_settings
 
     @setting(HAS_SETTING_LOCK_ID,setting_id='w',returns='b')
-    def has_setting_lock(self,c):
+    def has_setting_lock(self,c,setting_id):
         if setting_id not in self.locked_settings:
             raise SettingNotLockedException(
                 setting_id,
@@ -210,20 +227,27 @@ def LockServer(LabradServer):
     def is_setting_lockable(self,c,setting_id):
         return hasattr(self.settings[setting_id],LOCKABLE)
 
-    @setting(OWNING_CONTEXT_ID,setting_id='(ww)')
+    @setting(OWNING_CONTEXT_ID,setting_id='w')
     def owning_context(self,c,setting_id):
         if setting_id not in self.locked_settings:
             raise SettingNotLockedException(
                 setting_id,
                 self.settings[setting_id].name
             )
-        return self.locked_settings[setting_id]
+        return self._owning_context(setting_id)
 
-    def _can_access_setting(self,c,setting_id):        
+    def _owning_context(self,setting_id):
+        return self.locked_settings[setting_id]
+    
+    @setting(GET_CONTEXT_ID,returns='(ww)')
+    def get_context(self,c):
+        return c.ID
+
+    def _can_access_setting(self,context_id,setting_id):
         return (
             setting_id not in self.locked_settings
             or
-            self.locked_settings[setting_id] == c.ID
+            self.locked_settings[setting_id] == context_id
         )
 
     def expireContext(self,c):
