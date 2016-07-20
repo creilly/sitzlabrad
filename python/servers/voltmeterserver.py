@@ -1,4 +1,5 @@
-from labrad.server import LabradServer, setting, Signal
+from lockserver import LockServer, lockable_setting
+from labrad.server import setting, Signal
 from twisted.internet.defer import inlineCallbacks, Deferred
 from twisted.python.failure import Failure
 import labrad
@@ -38,7 +39,7 @@ ON_ACTIVE_CHANNELS_CHANGED = 'on_active_channels_changed'
 ON_SAMPLING_DURATION_CHANGED = 'on_sampling_duration_changed'
 ON_TRIGGERING_CHANGED = 'on_triggering_changed'
 
-class VoltmeterServer(LabradServer):
+class VoltmeterServer(LockServer):
     name = NAME
 
     on_active_channels_changed = Signal(110,ON_ACTIVE_CHANNELS_CHANGED,'*s')
@@ -99,7 +100,7 @@ class VoltmeterServer(LabradServer):
     def get_active_channels(self,c):
         return self.task.get_channels()
 
-    @setting(13,channels='*s')
+    @lockable_setting(13,channels='*s')
     def set_active_channels(self,c,channels):
         if not channels:
             raise Exception('must have at least one active channel')
@@ -111,7 +112,7 @@ class VoltmeterServer(LabradServer):
     def get_units(self,c,channel):
         return AITask(channel).get_units()[channel]
 
-    @setting(15, duration = 'v')
+    @lockable_setting(15, duration = 'v')
     def set_sampling_duration(self,c,duration):
         if self.acquiring:
             self.queue.append(
@@ -131,7 +132,7 @@ class VoltmeterServer(LabradServer):
     def is_triggering(self,c):
         return self.task.is_triggering()
 
-    @setting(18, is_triggering='b')
+    @lockable_setting(18, is_triggering='b')
     def set_triggering(self,c,is_triggering):
         if self.acquiring:
             self.queue.append(

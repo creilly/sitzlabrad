@@ -62,14 +62,12 @@ class StepperMotorClient:
     def has_lock(self):
         return self.sm_server.has_setting_lock(self.sm_server.set_position.ID)
 
-    def _on_setting_locked(self,c,msg):
-        setting_id = msg[0]
+    def _on_setting_locked(self,c,setting_id):
         if setting_id == self.sm_server.set_position.ID:
             if self.on_locked_cb is not None:
                 self.on_locked_cb()
             
-    def _on_setting_unlocked(self,c,msg):
-        setting_id = msg
+    def _on_setting_unlocked(self,c,setting_id):
         if setting_id == self.sm_server.set_position.ID:
             if self.on_unlocked_cb is not None:
                 self.on_unlocked_cb()

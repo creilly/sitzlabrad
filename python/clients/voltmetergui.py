@@ -9,6 +9,7 @@ from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet import reactor
 from labrad.wrappers import connectAsync
 from qtutils.labelwidget import LabelWidget
+from qtutils.lockwidget import LockWidget
 CHANNEL = 999
 TRACE_SIZE = 150
 class VoltmeterWidget(QtGui.QWidget):
@@ -91,7 +92,26 @@ class VoltmeterWidget(QtGui.QWidget):
         triggering_layout.addWidget(triggering_button)
         triggering_layout.addStretch()
 
-        general_controls_layout.addStretch()
+        locks_layout = QtGui.QVBoxLayout()
+        general_controls_layout.addWidget(
+            LabelWidget(
+                'locks',
+                locks_layout
+            )
+        )
+        locks = (
+            (
+                'active channels',vm.set_active_channels.ID
+            ),
+            (
+                'sampling duration',vm.set_sampling_duration.ID
+            ),
+            (
+                'triggering',vm.set_triggering.ID
+            )
+        )
+        for setting_name, setting_id in locks:
+            locks_layout.addWidget(LockWidget(vm,setting_id,setting_name))
         
         active_channels = yield vm.get_active_channels()
         available_channels = yield vm.get_available_channels()

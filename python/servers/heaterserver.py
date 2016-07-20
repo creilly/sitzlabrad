@@ -1,4 +1,5 @@
-from labrad.server import LabradServer, setting, Signal
+from lockserver import LockServer, lockable_setting
+from labrad.server import setting, Signal
 from twisted.internet.defer import inlineCallbacks, Deferred
 import labrad
 import numpy as np
@@ -66,11 +67,15 @@ class HeaterServer(LabradServer):
         for channel in VOLTMETER_CHANNELS:                
             packet.get_sample(channel,key=channel)
         samples = yield packet.send()
-        return samples
+        returnValue(samples)
 
     def get_filament_control(self):
         ao = self.client.analog_output
         return ao.get_value(FILAMENT_CONTROL)
+
+    def set_filament_control(self,filament_control):
+        ao = self.client.analog_output
+        return ao.set_value(FILAMENT_CONTROL,filament_control)
 
     def update_temperature_limit_state(self,temperature):
         self._set_temperature_limit_state(
@@ -142,12 +147,15 @@ class HeaterServer(LabradServer):
         self.ramp_rate = yield reg.get('ramp rate')
         self.filament_control_increment = yield reg.get('filament control increment')
         self.temperature_buffer = yield reg.get('temperature buffer')
+        default_temperature_setpoint = yield reg.get('temperature setpoint')
+        self._set_temperature_setpoint(default_temperature_setpoint)
         sampling_duration = yield reg.get('sampling duration')
         cm = ConnectionManager(self.client.manager)
         required_servers = [VM_SERVER,AO_SERVER]
         servers = yield cm.get_connected_servers()
         for server in servers:
             if server in required_servers:
+                print server, 'connected'
                 required_servers.remove(server)
         @inlineCallbacks
         def finish_init():
@@ -166,12 +174,14 @@ class HeaterServer(LabradServer):
             self.loop()
             LabradServer.initServer(self)
         def on_server_connected(server):
+            print server, 'connected'
             required_servers.remove(server)
             cm.on_server_connect(server,None)
             if not required_servers:
                 finish_init()
         if required_servers:
             for server in required_servers:
+                print 'waiting for', server
                 cm.on_server_connect(server,partial(on_server_connected,server))                
         else:
             finish_init()
@@ -217,6 +227,7 @@ class HeaterServer(LabradServer):
                 indices_to_remove.append(index)
         for index in reversed(indices_to_remove):
             self.trigger_requests.remove(index)                
+        self.loop()
 
     def get_rate_setpoint(self,temperature):
         if self.heating_state == COOLING:
@@ -237,6 +248,22 @@ class HeaterServer(LabradServer):
             filament_control = yield self.decrease_filament_control()
         returnValue(filament_control)
 
+    @inlineCallbacks
+    def increase_filament_control(self):
+        old_filament_control = yield self.get_filament_control()
+        new_filament_control = old_filament_control + self.filament_control_increment
+        yield self.set_filament_control(new_filament_control)
+        return self.get_filament_control()
+
+    @inlineCallbacks
+    def decrease_filament_control(self):
+        old_filament_control = yield self.get_filament_control()
+        new_filament_control = old_filament_control - self.filament_control_increment
+        if new_filament_control < 0:
+            new_filament_control = 0.
+        yield self.set_filament_control(new_filament_control)
+        return self.get_filament_control()
+
     def request_update(self,update_code):
         d = Deferred()
         self.update_requests.append(
@@ -249,19 +276,21 @@ class HeaterServer(LabradServer):
 
     @setting(10, returns='s')
     def get_feedback_state(self,c):
-        return self._get_feedback_state()
-    
-    @setting(11, feedback_state='s')  
+        return self.feedback_state
+        
+    @lockable_setting(11, feedback_state='s')  
     def set_feedback_state(self,c,feedback_state):
-        self._set_feedback_state(feedback_state)
+        self.feedback_state = feedback_state
+        self.on_feedback_state_changed(feedback_state)
 
     @setting(12, returns='s')
     def get_heating_state(self,c):
-        return self._get_heating_state()
+        return self.heating_state
 
-    @setting(13, heating_state='s')          
+    @lockable_setting(13, heating_state='s')          
     def set_heating_state(self,c,heating_state):
-        self._set_heating_state(heating_state)
+        self.heating_state=heating_state
+        self.on_heating_state_changed(heating_state)
 
     @setting(14, returns='v')
     def get_filament_control(self):
@@ -278,8 +307,17 @@ class HeaterServer(LabradServer):
     @setting(17, returns='v')
     def get_rate(self):
         return self.request_update(RATE_UPDATE)
+
+    @setting(18, returns='v')
+    def get_temperature_setpoint(self,c):
+        return self.temperature_setpoint
+
+    @lockable_setting(19, temperature_setpoint='v')
+    def set_temperature_setpoint(self,c,temperature_setpoint):
+        self.temperature_setpoint = temperature_setpoint
+        self.on_temperature_setpoint_changed(temperature_setpoint)
     
-__server__ = AnalogOutputServer()
+__server__ = HeaterServer()
 
 if __name__ == '__main__':
     from labrad import util

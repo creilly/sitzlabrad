@@ -156,7 +156,7 @@ class LockServer(LabradServer):
     on_setting_locked = Signal(
         ON_SETTING_LOCKED_ID,
         ON_SETTING_LOCKED_NAME,
-        '(w(ww))'
+        'w'
     )
     on_setting_unlocked = Signal(
         ON_SETTING_UNLOCKED_ID,

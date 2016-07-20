@@ -10,6 +10,7 @@ from steppermotorclient import StepperMotorClient
 from labrad.wrappers import connectAsync
 from labrad.types import Error
 from qtutils.labelwidget import LabelWidget
+from qtutils.lockwidget import LockWidget
 from functools import partial
 
 RANGE = (-1000000,1000000)
@@ -63,6 +64,7 @@ class StepperMotorWidget(QtGui.QWidget):
                 except Error, e:
                     QtGui.QMessageBox.warning(self,'error',e.msg)
                     sm_client.is_locked().addCallback(update_lock_state)
+                    returnValue(None)
                 lock_label.setText('has lock' if has_lock else 'locked')
             else:
                 lock_label.setText('unlocked')
@@ -141,14 +143,18 @@ class StepperMotorGroupWidget(QtGui.QWidget):
         self.init_widget()
 
     @inlineCallbacks
-    def init_widget(self):
+    def init_widget(self):        
         sm_server = self.sm_server
-        layout = QtGui.QHBoxLayout()
+        layout = QtGui.QVBoxLayout()        
         self.setLayout(layout)
         cxn = yield connectAsync()
+        sm_layout = QtGui.QHBoxLayout()
+
+        layout.addLayout(sm_layout)
+
         sm_names = yield sm_server.get_stepper_motors()
         for name in sm_names:
-            layout.addWidget(
+            sm_layout.addWidget(
                 LabelWidget(
                     name,
                     StepperMotorWidget(
@@ -156,6 +162,7 @@ class StepperMotorGroupWidget(QtGui.QWidget):
                     )
                 )
             )
+        layout.addWidget(LockWidget(sm_server,sm_server.set_position,'set position'))
     def closeEvent(self,event):
         event.accept()
         if reactor.running:
