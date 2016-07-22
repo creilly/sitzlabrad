@@ -10,99 +10,59 @@ from steppermotorclient import StepperMotorClient
 from labrad.wrappers import connectAsync
 from labrad.types import Error
 from qtutils.labelwidget import LabelWidget
-from qtutils.lockwidget import LockWidget
+from qtutils.lockwidget import DeviceLockWidget
 from functools import partial
 
 RANGE = (-1000000,1000000)
 
 class StepperMotorWidget(QtGui.QWidget):
-    def __init__(self,sm_client):
+    def __init__(self,sm_name):
         QtGui.QWidget.__init__(self)
-        self.sm_client = sm_client
+        self.sm_name = sm_name
         self.init_widget()
 
-    def init_widget(self):
-        sm_client = self.sm_client
+    @inlineCallbacks
+    def init_widget(self):        
+        client = yield connectAsync()
+        sm = client.stepper_motor
+        yield sm.select_device(self.sm_name)
         
         layout = QtGui.QVBoxLayout()        
         self.setLayout(layout)
         
         position_label = QtGui.QLabel()
         layout.addWidget(position_label)
-        sm_client.on_new_position(position_label.setNum)
+        
+        def on_new_position(c,position):
+            position_label.setNum(position)
+        sm.on_new_position.connect(on_new_position)
         
         position_spin = QtGui.QSpinBox()
         layout.addWidget(position_spin)
         position_spin.setRange(*RANGE)
-        sm_client.get_position().addCallback(position_label.setNum)
+        sm.get_position().addCallback(position_label.setNum)
         set_position_button = QtGui.QPushButton('set position')
         layout.addWidget(set_position_button)
         
         @inlineCallbacks
         def on_set_position():
-            is_busy = yield sm_client.is_busy()
+            is_busy = yield sm.is_busy()
             if is_busy:
                 QtGui.QMessageBox.warning(self,'stepper motor busy','stepper motor is currently busy')
                 returnValue(None)
-            is_enabled = yield sm_client.is_enabled()
+            is_enabled = yield sm.is_enabled()
             if not is_enabled:
                 QtGui.QMessageBox.warning(self,'stepper motor disabled','stepper motor is currently disabled')
                 returnValue(None)
             requested_position = position_spin.value()            
             try:
-                yield sm_client.set_position(requested_position)
+                yield sm.set_position(requested_position)
             except Error, e:
                 QtGui.QMessageBox.warning(self,'error',e.msg)
         set_position_button.clicked.connect(on_set_position)
 
-        lock_label = QtGui.QLabel()
-        @inlineCallbacks
-        def update_lock_state(is_locked):
-            if is_locked:
-                try:
-                    has_lock = yield sm_client.has_lock()
-                except Error, e:
-                    QtGui.QMessageBox.warning(self,'error',e.msg)
-                    sm_client.is_locked().addCallback(update_lock_state)
-                    returnValue(None)
-                lock_label.setText('has lock' if has_lock else 'locked')
-            else:
-                lock_label.setText('unlocked')
-        sm_client.on_locked(
-            partial(
-                update_lock_state,
-                True
-            )
-        )
-        sm_client.on_unlocked(
-            partial(
-                update_lock_state,
-                False
-            )
-        )
-        layout.addWidget(lock_label)
-        sm_client.is_locked().addCallback(update_lock_state)
-
-        @inlineCallbacks
-        def change_lock_state(locking):
-            try:
-                if locking:
-                    yield sm_client.lock()
-                else:
-                    yield sm_client.unlock()
-            except Error, e:
-                QtGui.QMessageBox.warning(self,'error',e.msg)
-        
-        lock_button = QtGui.QPushButton('lock')
-        lock_button.clicked.connect(partial(change_lock_state,True))
-        layout.addWidget(lock_button)
-        
-        unlock_button = QtGui.QPushButton('unlock')
-        unlock_button.clicked.connect(partial(change_lock_state,False))
-        layout.addWidget(unlock_button)
-        
         stop_button = QtGui.QPushButton('stop')
-        stop_button.clicked.connect(sm_client.stop)
+        stop_button.clicked.connect(sm.stop)
         layout.addWidget(stop_button)
 
         busy_label = QtGui.QLabel()
@@ -110,31 +70,35 @@ class StepperMotorWidget(QtGui.QWidget):
             busy_label.setText(
                 'busy' if is_busy else 'not busy'
             )
-        sm_client.is_busy().addCallback(update_busy_status)
-        sm_client.on_busy_status_changed(update_busy_status)
+        sm.is_busy().addCallback(update_busy_status)
+        def on_busy_status_changed(c,busy_status):
+            update_busy_status(busy_status)
+        sm.on_busy_status_changed.connect(on_busy_status_changed)
         layout.addWidget(busy_label)
 
-        def on_is_enableable(is_enableable):
-            if is_enableable:
-                enabled_label = QtGui.QLabel()
-                def update_enabled_status(is_enabled):
-                    enabled_label.setText(
-                        'enabled' if is_enabled else 'disabled'
-                    )
-                sm_client.is_enabled().addCallback(update_enabled_status)
-                sm_client.on_enabled_status_changed(update_enabled_status)
-                layout.addWidget(enabled_label)
-                enable_button = QtGui.QPushButton('enable')
-                enable_button.clicked.connect(partial(sm_client.set_enabled,True))
-                layout.addWidget(enable_button)
+        is_enableable = yield sm.is_enableable()
+        if is_enableable:
+            enabled_label = QtGui.QLabel()
+            def update_enabled_status(is_enabled):
+                enabled_label.setText(
+                    'enabled' if is_enabled else 'disabled'
+                )
+            sm.is_enabled().addCallback(update_enabled_status)
+            def on_enabled_status_changed(c,enabled_status):
+                update_enabled_status(enabled_status)
+            sm.on_enabled_status_changed.connect(on_enabled_status_changed)
+            layout.addWidget(enabled_label)
+            enable_button = QtGui.QPushButton('enable')
+            enable_button.clicked.connect(partial(sm.set_enabled,True))
+            layout.addWidget(enable_button)
 
-                disable_button = QtGui.QPushButton('disable')
-                disable_button.clicked.connect(partial(sm_client.set_enabled,False))
-                layout.addWidget(disable_button)
-        sm_client.is_enableable().addCallback(on_is_enableable)
+            disable_button = QtGui.QPushButton('disable')
+            disable_button.clicked.connect(partial(sm.set_enabled,False))
+            layout.addWidget(disable_button)
 
         layout.addStretch()
-        
+
+        layout.addWidget(DeviceLockWidget(sm))
 
 class StepperMotorGroupWidget(QtGui.QWidget):
     def __init__(self,sm_server):
@@ -152,21 +116,21 @@ class StepperMotorGroupWidget(QtGui.QWidget):
 
         layout.addLayout(sm_layout)
 
-        sm_names = yield sm_server.get_stepper_motors()
+        sm_names = yield sm_server.get_devices()
         for name in sm_names:
             sm_layout.addWidget(
                 LabelWidget(
                     name,
                     StepperMotorWidget(
-                        StepperMotorClient(name,sm_server)
+                        name
                     )
                 )
             )
-        layout.addWidget(LockWidget(sm_server,sm_server.set_position,'set position'))
+            
     def closeEvent(self,event):
-        event.accept()
         if reactor.running:
             reactor.stop()
+        event.accept()
 
 if __name__ == '__main__':
     @inlineCallbacks

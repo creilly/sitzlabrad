@@ -4,7 +4,7 @@ if QtCore.QCoreApplication.instance() is None:
     app = QtGui.QApplication(sys.argv)
     import qt4reactor
     qt4reactor.install()
-from aogui import AnalogOutputWidget
+from aogui import AnalogOutputGroupWidget
 from voltmetergui import VoltmeterWidget
 from steppermotorgui import StepperMotorGroupWidget
 from delaygeneratorgui import DelayGeneratorGroupWidget
@@ -20,7 +20,7 @@ WIDGETS = {
     'Voltmeter':VoltmeterWidget,
     'Stepper Motor':StepperMotorGroupWidget,
     'Delay Generator':DelayGeneratorGroupWidget,
-    'Analog Output':AnalogOutputWidget
+    'Analog Output':AnalogOutputGroupWidget
 }
 class MainWidget(QtGui.QTabWidget):
     def __init__(self,client):

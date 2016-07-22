@@ -64,7 +64,7 @@ class VoltmeterServer(LockServer):
         self.acquiring = False
         self.subscribers = []
         self.queue = []
-        yield LabradServer.initServer(self)
+        yield LockServer.initServer(self)
     
     @inlineCallbacks
     def start_acquisition(self):

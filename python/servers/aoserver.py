@@ -1,4 +1,4 @@
-from labrad.server import LabradServer, setting, Signal
+from deviceserver import DeviceServer, device_setting, DeviceSignal, Device
 from twisted.internet.defer import inlineCallbacks, Deferred
 import labrad
 from daqmx.task import Task
@@ -25,57 +25,55 @@ NAME = 'Analog Output'
 REGISTRY_PATH = ['','Servers',NAME]
 CHANNELS = 'channels'
 
-ON_NEW_VALUE = 'on_new_value'
+ON_NEW_VALUE = 'on new value'
 
 DEFAULT_VALUE = 0.
 
-class AnalogOutputServer(LabradServer):
-    name = NAME
+class AnalogOutputDevice(Device):
+    on_new_value = DeviceSignal(110,ON_NEW_VALUE,'v')
+    def __init__(self,task,default_value=0.):
+        Device.__init__(self)
+        self.task = task
+        self._set_value(default_value)
 
-    on_new_value = Signal(110,ON_NEW_VALUE,'(sv)')
+    @device_setting(10, device_setting_lockable=True, value='v')  
+    def set_value(self,c,value):
+        self._set_value(value)
+        
+    @device_setting(11, returns='v')
+    def get_value(self,c):
+        return self.values
+        
+    @device_setting(13, returns='s')
+    def get_units(self,c):
+        return self.task.get_units()
+
+    @device_setting(14, returns='(vv)')
+    def get_range(self,c):
+        return (
+            self.task.get_min(),
+            self.task.get_max()
+        )
+
+    def _set_value(self,value):
+        self.task.write_sample(value)
+        self.values = value
+        self.on_new_value(value)
+
+class AnalogOutputServer(DeviceServer):
+    name = NAME
+    device_class = AnalogOutputDevice
 
     @inlineCallbacks
     def initServer(self):
         reg = self.client.registry
         reg.cd(REGISTRY_PATH)
         channels = self.channels = yield reg.get(CHANNELS)
-        self.tasks = {
-            channel:AOTask(channel)
-            for channel in channels
-        }
-        self.values = {}
         for channel in channels:
-            self._set_value(channel,DEFAULT_VALUE)
-        yield LabradServer.initServer(self)
-
-    @setting(10, channel='s', value='v')  
-    def set_value(self,c,channel,value):
-        self._set_value(channel,value)
-        self.on_new_value((channel,value))
-        
-    @setting(11, channel='s', returns='v')
-    def get_value(self,c,channel):
-        return self.values[channel]
-        
-    @setting(12, returns='*s')
-    def get_channels(self,c):
-        return self.channels
-
-    @setting(13, channel='s', returns='s')
-    def get_units(self,c,channel):
-        return self.tasks[channel].get_units()
-
-    @setting(14, channel='s', returns='(vv)')
-    def get_range(self,c,channel):
-        task = self.tasks[channel]
-        return (
-            task.get_min(),
-            task.get_max()
-        )
-
-    def _set_value(self,channel,value):
-        self.tasks[channel].write_sample(value)
-        self.values[channel] = value
+            self.add_device(
+                channel,AnalogOutputDevice(AOTask(channel))
+            )
+        yield DeviceServer.initServer(self)
 
 __server__ = AnalogOutputServer()
 

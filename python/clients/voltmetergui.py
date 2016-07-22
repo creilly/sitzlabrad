@@ -112,6 +112,8 @@ class VoltmeterWidget(QtGui.QWidget):
         )
         for setting_name, setting_id in locks:
             locks_layout.addWidget(LockWidget(vm,setting_id,setting_name))
+
+        general_controls_layout.addStretch()
         
         active_channels = yield vm.get_active_channels()
         available_channels = yield vm.get_available_channels()

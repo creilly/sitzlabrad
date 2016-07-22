@@ -1,5 +1,4 @@
-from labrad.server import LabradServer, setting, Signal
-from lockserver import LockServer, lockable_setting
+from deviceserver import DeviceServer, Device, device_setting, DeviceSignal
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import labrad
@@ -42,77 +41,67 @@ DELAY = 'delay'
 STEP_OUTPUT_CHANNEL = 'step output channel'
 STEP_INPUT_CHANNEL = 'step input channel'
 
-ON_NEW_POSITION = 'on_new_position'
-ON_BUSY_STATUS_CHANGED = 'on_busy_status_changed'
-ON_ENABLED_STATUS_CHANGED = 'on_enabled_status_changed'
+ON_NEW_POSITION = 'on new position'
+ON_BUSY_STATUS_CHANGED = 'on busy status changed'
+ON_ENABLED_STATUS_CHANGED = 'on enabled status changed'
 
 UPDATE_INTERVAL = .1
 
 class StepperMotorBusyException(Exception): pass
 
-class StepperMotorServer(LockServer):
-    name = NAME    # Will be labrad name of server
+class StepperMotorDevice(Device):
 
-    on_new_position = Signal(110,ON_NEW_POSITION,'(si)')
-    on_busy_status_changed = Signal(111,ON_BUSY_STATUS_CHANGED,'(sb)')
-    on_enabled_status_changed = Signal(112,ON_ENABLED_STATUS_CHANGED,'(sb)')
+    on_new_position = DeviceSignal(110,ON_NEW_POSITION,'i')
+    on_busy_status_changed = DeviceSignal(111,ON_BUSY_STATUS_CHANGED,'b')
+    on_enabled_status_changed = DeviceSignal(112,ON_ENABLED_STATUS_CHANGED,'b')
 
-    @inlineCallbacks
-    def initServer(self):  # Do initialization here
-        reg = self.client.registry
-        yield reg.cd(REGISTRY_PATH)
-        stepper_motor_names = yield reg.dir()
-        stepper_motor_names = stepper_motor_names[0] # just get directories
-        self.stepper_motors = {name:None for name in stepper_motor_names}
-        self.busy={name:False for name in stepper_motor_names}
-        for stepper_motor in stepper_motor_names:
-            yield self.update_stepper_motor(stepper_motor)
-        yield LabradServer.initServer(self)
-
-    @setting(17,stepper_motor_name='s',returns='b')
-    def is_enableable(self,c,stepper_motor_name):
-        return self.stepper_motors[stepper_motor_name].is_enableable()
-
-    @setting(15,stepper_motor_name='s',returns='b')
-    def is_enabled(self,c,stepper_motor_name):
-        return self.stepper_motors[stepper_motor_name].is_enabled()
-
-    @setting(16,stepper_motor_name='s',is_enabled='b')
-    def set_enabled(self,c,stepper_motor_name,is_enabled):
-        self.stepper_motors[stepper_motor_name].set_enabled(is_enabled)
-        self.on_enabled_status_changed((stepper_motor_name,is_enabled))
-
-    @setting(13,stepper_motor_name='s',returns='b')
-    def is_busy(self,c,stepper_motor_name):
-        return self.busy[stepper_motor_name]
-
-    @setting(12,stepper_motor_name='s',returns='i')
-    def get_position(self,c,stepper_motor_name):
-        return self.stepper_motors[stepper_motor_name].get_position()
-
-    def set_busy_status(self,stepper_motor_name,busy_status):
-        self.busy[stepper_motor_name] = busy_status
-        self.on_busy_status_changed((stepper_motor_name,busy_status))
+    def __init__(self,sm,sm_name,client):
+        Device.__init__(self)
+        self.sm = sm
+        self.sm_name = sm_name
+        self.busy = False
+        self.client = client
         
-    @lockable_setting(11,stepper_motor_name='s',position='i')
-    def set_position(self,c,stepper_motor_name,position):
-        print 'here sp'
-        if self.busy[stepper_motor_name]:
+    @device_setting(17,returns='b')
+    def is_enableable(self,c):
+        return self.sm.is_enableable()
+
+    @device_setting(16,is_enabled='b')
+    def set_enabled(self,c,is_enabled):
+        self.sm.set_enabled(is_enabled)
+        self.on_enabled_status_changed(is_enabled)
+
+    @device_setting(15,returns='b')
+    def is_enabled(self,c):
+        return self.sm.is_enabled()
+
+    @device_setting(14)
+    def stop(self,c):
+        self.sm.stop()
+
+    @device_setting(13,returns='b')
+    def is_busy(self,c):
+        return self.get_busy_status()
+
+    @device_setting(12,returns='i')
+    def get_position(self,c):
+        return self.sm.get_position()
+
+    @device_setting(11,device_setting_lockable=True,position='i')
+    def set_position(self,c,position):
+        if self.get_busy_status():
             raise StepperMotorBusyException
-        sm = self.stepper_motors[stepper_motor_name]
+        sm = self.sm
         old_position = sm.get_position()
-        self.set_busy_status(stepper_motor_name,True)
+        self.set_busy_status(True)
         try:
             def update_position(_):
-                if self.busy[stepper_motor_name]:
+                if self.get_busy_status():
                     self.on_new_position(
-                        (
-                            stepper_motor_name,
-                            old_position + {
-                                sm.FORWARDS:1,
-                                sm.BACKWARDS:-1
-                            }[sm.get_direction()]*sm.get_pulses()
-                        )
+                        old_position + {
+                            sm.FORWARDS:1,
+                            sm.BACKWARDS:-1
+                        }[sm.get_direction()]*sm.get_pulses()
                     )
                     reactor.callLater(
                         UPDATE_INTERVAL,
@@ -132,27 +121,40 @@ class StepperMotorServer(LockServer):
         except (SetPositionStoppedException,DisabledException), e:
             failed = True
         new_position = sm.get_position()
-        self.set_busy_status(stepper_motor_name,False)
+        self.set_busy_status(False)
         reg = self.client.registry
-        yield reg.cd(REGISTRY_PATH+[stepper_motor_name])
+        yield reg.cd(REGISTRY_PATH+[self.sm_name])
         yield reg.set(INIT_POS,int(new_position))
-        self.on_new_position(
-            (
-                stepper_motor_name,
-                new_position
-            )
-        )
+        self.on_new_position(new_position)
         if failed:
             raise e
 
-    @setting(14,stepper_motor_name='s')
-    def stop(self,c,stepper_motor_name):
-        self.stepper_motors[stepper_motor_name].stop()
+    def get_busy_status(self):
+        return self.busy
+    
+    def set_busy_status(self,busy_status):
+        self.busy = busy_status
+        self.on_busy_status_changed(busy_status)            
+
+class StepperMotorServer(DeviceServer):
+    name = NAME    # Will be labrad name of server
+    device_class = StepperMotorDevice
 
     @inlineCallbacks
-    def update_stepper_motor(self,stepper_motor):        
+    def initServer(self):  # Do initialization here
         reg = self.client.registry
-        yield reg.cd(REGISTRY_PATH+[stepper_motor])
+        yield reg.cd(REGISTRY_PATH)
+        stepper_motor_names = yield reg.dir()
+        stepper_motor_names = stepper_motor_names[0] # just get directories
+        self.stepper_motors = {name:None for name in stepper_motor_names}
+        for stepper_motor_name in stepper_motor_names:
+            yield self.add_stepper_motor(stepper_motor_name)
+        yield DeviceServer.initServer(self)
+
+    @inlineCallbacks
+    def add_stepper_motor(self,stepper_motor_name):        
+        reg = self.client.registry
+        yield reg.cd(REGISTRY_PATH+[stepper_motor_name])
         
         dirs, keys = yield reg.dir()
         dir_channel = yield reg.get(DIR_CHANNEL)
@@ -197,11 +199,10 @@ class StepperMotorServer(LockServer):
                 enable_task,
                 init_pos,
             )
-        self.stepper_motors[stepper_motor] = sm
-
-    @setting(10, returns='*s')
-    def get_stepper_motors(self,c):
-        return self.stepper_motors.keys()
+        self.add_device(
+            stepper_motor_name,
+            StepperMotorDevice(sm,stepper_motor_name,self.client)
+        )
 
 __server__ = StepperMotorServer()
 

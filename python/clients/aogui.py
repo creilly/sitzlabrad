@@ -11,68 +11,86 @@ from labrad.types import Error
 from qtutils.labelwidget import LabelWidget
 from functools import partial
 import numpy as np
+from qtutils.lockwidget import DeviceLockWidget
 
 class AnalogOutputWidget(QtGui.QWidget):
-    def __init__(self,ao_server):
+    def __init__(self,channel_name):
         QtGui.QWidget.__init__(self)
-        self.ao_server = ao_server
+        self.channel_name = channel_name
         self.init_widget()
 
     @inlineCallbacks
     def init_widget(self):
-        ao = self.ao_server
-        channels = yield ao.get_channels()
-        units = {}
-        for channel in channels:
-            unit = yield ao.get_units(channel)
-            units[channel] = unit
-        layout = QtGui.QHBoxLayout()
+        client = yield connectAsync()
+        ao = client.analog_output
+        yield ao.select_device(self.channel_name)
+
+        layout = QtGui.QVBoxLayout()
         self.setLayout(layout)
-        labels = {
-            channel:QtGui.QLabel() for channel in channels
-        }
-        def button_clicked(channel,spin):
-            def set_value():
-                ao.set_value(channel,spin.value())
-            return set_value
-        for channel in channels:
-            channel_layout = QtGui.QVBoxLayout()
-            channel_layout.addWidget(labels[channel])
-            spin = QtGui.QDoubleSpinBox()
-            spin.setSuffix(units[channel])
-            channel_layout.addWidget(spin)
-            min_value, max_value = yield ao.get_range(channel)
-            spin.setRange(min_value,max_value)
-            decimals = int(
-                np.log10(
-                    2**16/(max_value-min_value)
-                ) + 1
-            )
-            spin.setDecimals(
-                decimals if decimals > 0 else 0
-            )
-            button = QtGui.QPushButton('set')
-            button.clicked.connect(
-                button_clicked(channel,spin)
-            )
-            channel_layout.addWidget(button)
-            layout.addWidget(
-                LabelWidget(
-                    channel,
-                    channel_layout
-                )
-            )
-        def on_new_value(channel,value):
-            labels[channel].setText(
-                '%f %s' % (value,units[channel])
+
+        value_label = QtGui.QLabel()
+        layout.addWidget(value_label)
+        
+        units = yield ao.get_units()
+        
+        spin = QtGui.QDoubleSpinBox()
+        spin.setSuffix(units)
+        layout.addWidget(spin)
+        
+        min_value, max_value = yield ao.get_range()
+        spin.setRange(min_value,max_value)
+        decimals = int(
+            np.log10(
+                2**16/(max_value-min_value)
+            ) + 1
+        )
+        spin.setDecimals(
+            decimals if decimals > 0 else 0
+        )
+        
+        set_button = QtGui.QPushButton('set')
+        @inlineCallbacks
+        def on_set_clicked():
+            try:
+                yield ao.set_value(spin.value())
+            except Error, e:
+                QtGui.QMessageBox.warning(self,'error',e.msg)
+        set_button.clicked.connect(on_set_clicked)
+        
+        layout.addWidget(set_button)
+            
+        def on_new_value(value):
+            value_label.setText(
+                '%f %s' % (value,units)
             )
         ao.on_new_value.connect(
-            lambda context, data:
-            on_new_value(*data)
+            lambda context, value:
+            on_new_value(value)
         )
-        for channel in channels:
-            value = yield ao.get_value(channel)
-            on_new_value(channel,value)
+        value = yield ao.get_value()
+        on_new_value(value)
+
+        layout.addWidget(DeviceLockWidget(ao))
+
+class AnalogOutputGroupWidget(QtGui.QWidget):
+    def __init__(self,ao):
+        QtGui.QWidget.__init__(self)
+        self.ao = ao
+        self.init_widget()
+
+    @inlineCallbacks
+    def init_widget(self):
+        layout = QtGui.QHBoxLayout()
+        self.setLayout(layout)        
+        ao = self.ao
+        channel_names = yield ao.get_devices()
+        for channel_name in channel_names:
+            layout.addWidget(
+                LabelWidget(
+                    channel_name,
+                    AnalogOutputWidget(channel_name)
+                )
+            )
 
     def closeEvent(self,event):
         if reactor.running:
@@ -83,7 +101,7 @@ if __name__ == '__main__':
     @inlineCallbacks
     def main():
         cxn = yield connectAsync()
-        ao_widget = AnalogOutputWidget(cxn.analog_output)
+        ao_widget = AnalogOutputGroupWidget(cxn.analog_output)
         container.append(ao_widget)
         ao_widget.show()
     container = []

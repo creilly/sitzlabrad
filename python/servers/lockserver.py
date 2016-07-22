@@ -37,8 +37,10 @@ class LockedException(Exception):
     ):
         Exception.__init__(
             self,
-            'context %s can not access setting %s (id %d) \
-            because it is locked by context %s' % (
+            (
+                'context %s can not access setting %s (id %d) ' + 
+                'because it is locked by context %s'
+            ) % (
                 requesting_context,
                 setting_name,
                 setting_id,
@@ -66,8 +68,10 @@ class SettingAlreadyLockedException(Exception):
     ):
         Exception.__init__(
             self,
-            'setting %s (id %d) can not be locked by context %s \
-            because it is already locked by context %s' % (
+            (
+                'setting %s (id %d) can not be locked by context %s ' +
+                'because it is already locked by context %s'
+            ) % (
                 setting_name, 
                 setting_id, 
                 requesting_context, 
@@ -99,8 +103,10 @@ class UnlockUnownedSettingException(Exception):
     ):
         Exception.__init__(
             self,
-            'setting %s (id %d) can not be unlocked by \
-            context %s because it is locked by context %s' % (
+            (
+                'setting %s (id %d) can not be unlocked by ' +
+                'context %s because it is locked by context %s'
+            ) % (
                 setting_name,
                 setting_id,
                 requesting_context,
@@ -116,10 +122,12 @@ class SettingNotLockedException(Exception):
     ):
         Exception.__init__(
             self,
-            'setting %s (id %d) has no owning context because \
-            it is unlocked' % (
+            (
+                'setting %s (id %d) has no owning context because ' +
+                'it is unlocked'
+            ) % (
                 setting_name,
-                setting_id                
+                setting_id
             )
         )
         
@@ -188,7 +196,7 @@ class LockServer(LabradServer):
 
     def _lock_setting(self,context_id,setting_id):
         self.locked_settings[setting_id]=context_id
-        self.on_setting_locked((setting_id,context_id))
+        self.on_setting_locked(setting_id)
 
     @setting(UNLOCK_SETTING_ID,setting_id='w')
     def unlock_setting(self,c,setting_id):
@@ -256,6 +264,7 @@ class LockServer(LabradServer):
                 for setting_id, context_id in 
                 self.locked_settings.items() 
                 if context_id == c.ID
-        ]:
+        ]:            
             self._unlock_setting(setting_id)
+        LabradServer.expireContext(self,c)
         
