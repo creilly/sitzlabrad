@@ -18,6 +18,11 @@ from labrad.types import Error
 # class that you would like to expose as labrad
 # settings with the device_setting decorator,
 # which works just like the setting decorator.
+# additionally you can define signals for device
+# classes using the DeviceSignal just as you 
+# would for Signal and servers. clients that
+# register for a signal will only receive signals
+# emitted by their selected device.
 #
 # then define a device server that inherits from
 # DeviceServer. set its device_class attribute to
@@ -26,7 +31,7 @@ from labrad.types import Error
 # device class (i.e. add devices) by using the
 # device server's add_device method.
 #
-# to use the device server, clients must first
+# to use the device server client-side, clients must first
 # select a device. then when device settings are
 # called by the client they will be executed by
 # the selected device. device settings can be
