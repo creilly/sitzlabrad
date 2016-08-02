@@ -161,6 +161,7 @@ def lockable_setting(lr_ID, lr_name=None, returns=[], unflatten=True, **params):
     return decorator
     
 class LockServer(LabradServer):
+    sendTracebacks = False
     on_setting_locked = Signal(
         ON_SETTING_LOCKED_ID,
         ON_SETTING_LOCKED_NAME,

@@ -12,6 +12,7 @@ from qtutils.labelwidget import LabelWidget
 from functools import partial
 import numpy as np
 from qtutils.lockwidget import DeviceLockWidget
+from qtutils.labraderror import catch_labrad_error
 
 class AnalogOutputWidget(QtGui.QWidget):
     def __init__(self,channel_name):
@@ -49,12 +50,8 @@ class AnalogOutputWidget(QtGui.QWidget):
         )
         
         set_button = QtGui.QPushButton('set')
-        @inlineCallbacks
         def on_set_clicked():
-            try:
-                yield ao.set_value(spin.value())
-            except Error, e:
-                QtGui.QMessageBox.warning(self,'error',e.msg)
+            catch_labrad_error(self,ao.set_value(spin.value()))
         set_button.clicked.connect(on_set_clicked)
         
         layout.addWidget(set_button)

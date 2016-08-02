@@ -14,21 +14,23 @@ from functools import partial
 import numpy as np
 import os
 from time import clock
+from qtutils.labraderror import catch_labrad_error
+from qtutils.lockwidget import LockWidget
+from qtutils.labelwidget import LabelWidget
 
 pg.setConfigOption('background','w')
 pg.setConfigOption('foreground','k')
 
-RUNNING_AVERAGE = 5. # seconds
-HISTORY = 200
-DELTA_CONTROL = 0.003
-FILAMENT_CHANNEL = 'filament control output'
+MIN_TEMPERATURE, MAX_TEMPERATURE = 0, 1150
+RUNNING_AVERAGE = 40 # samples (i.e. 40 -> 2 second running average at 50ms per sample)
+HISTORY = 400
 TIME = 'time'
 INPUTS = (TIME,)
 FILAMENT_CONTROL, EMISSION_CURRENT, TEMPERATURE, TEMPERATURE_SETPOINT, RATE, RATE_AVERAGE, RATE_SETPOINT = 'filament control', 'emission current', 'temperature', 'temperature setpoint', 'rate', 'rate average', 'rate setpoint'
 OUTPUTS = (FILAMENT_CONTROL,EMISSION_CURRENT,TEMPERATURE,TEMPERATURE_SETPOINT,RATE,RATE_AVERAGE,RATE_SETPOINT)
 FILAMENT_PW, EMISSION_PW, TEMPERATURE_PW, RATE_PW = 0,1,2,3
 PLOTS = (FILAMENT_PW,EMISSION_PW,TEMPERATURE_PW,RATE_PW)
-TITLE, TRACES = 0,1
+TITLE, TRACES, LABEL = 0,1,2
 FILAMENT_TRACE,EMISSION_TRACE,TEMPERATURE_TRACE,TEMPERATURE_SETPOINT_TRACE,RATE_TRACE,RATE_SETPOINT_TRACE = 0,1,2,3,4,5
 TRACE_NAME, TRACE_TYPE = 0,1
 TRACE_ATTRS = (TRACE_NAME,TRACE_TYPE)
@@ -41,7 +43,8 @@ PLOTS_DICT = {
                 TRACE_NAME:'filament control',
                 TRACE_TYPE:SCATTER
             }
-        }
+        },
+        LABEL:'control voltage (volts)'
     },
     EMISSION_PW:{
         TITLE:'emission current',
@@ -50,7 +53,8 @@ PLOTS_DICT = {
                 TRACE_NAME:'emission current',
                 TRACE_TYPE:SCATTER
             }
-        }
+        },
+        LABEL:'emission current (mA)'
     },
     TEMPERATURE_PW:{
         TITLE:'sample temperature',
@@ -63,7 +67,8 @@ PLOTS_DICT = {
                 TRACE_NAME:'setpoint',
                 TRACE_TYPE:LINE
             }
-        }
+        },
+        LABEL:'temperature (degs celsius)'
     },
     RATE_PW:{
         TITLE:'temperature ramp rate',
@@ -80,18 +85,19 @@ PLOTS_DICT = {
                 TRACE_NAME:'ramp rate setpoint',
                 TRACE_TYPE:LINE
             }
-        }
+        },
+        LABEL:'temperature velocity (degs c/second)'
     }
 }
 
 class HeaterWidget(QtGui.QWidget):
-    def __init__(self,heater_client):
+    def __init__(self):
         QtGui.QWidget.__init__(self)
         self.init_widget()
 
     @inlineCallbacks
     def init_widget(self):
-        layout = QtGui.QVBoxLayout()
+        layout = QtGui.QHBoxLayout()
         self.setLayout(layout)
 
         plot_layout = QtGui.QHBoxLayout()
@@ -101,7 +107,13 @@ class HeaterWidget(QtGui.QWidget):
         traces = {}
         for plot in PLOTS:
             plot_dict = PLOTS_DICT[plot]
-            plot_widget = PlotWidget(title=plot_dict[TITLE])
+            plot_widget = PlotWidget(
+                title=plot_dict[TITLE],
+                labels={
+                    'bottom':'time (samples)',
+                    'left':plot_dict[LABEL]
+                }
+            )
             plot_traces = plot_dict[TRACES]            
             if len(plot_traces) > 1:
                 plot_widget.addLegend()
@@ -130,130 +142,180 @@ class HeaterWidget(QtGui.QWidget):
                 trace_index += 1
             plot_layout.addWidget(plot_widget)
 
-        controls_layout = QtGui.QHBoxLayout()
-        layout.addLayout(controls_layout)
-        
-        temperature_setpoint_spin = QtGui.QSpinBox()
-        temperature_setpoint_spin.setRange(MIN_TEMPERATURE,MAX_TEMPERATURE)
-        temperature_setpoint_spin.setValue(DEFAULT_TEMP_SETPOINT)
-        temperature_setpoint_spin.setPrefix('temp')
-        temperature_setpoint_spin.setSuffix('C')
-        controls_layout.addWidget(temperature_setpoint_spin)
+        client = yield connectAsync()
+        sh_server = client.sample_heater
 
-        temperature_setpoint_button = QtGui.QPushButton('set')
-        controls_layout.addWidget(temperature_setpoint_button)
+        controls_layout = QtGui.QVBoxLayout()
+        layout.addLayout(controls_layout)
+
+        temperature_setpoint_layout = QtGui.QHBoxLayout()
+        
+        controls_layout.addWidget(
+            LabelWidget(
+                'temperature setpoint',
+                temperature_setpoint_layout
+            )
+        )
 
         temperature_setpoint_label = QtGui.QLabel()
-        controls_layout.addWidget(temperature_setpoint_label)
+        temperature_setpoint_layout.addWidget(temperature_setpoint_label)
 
-        controls_layout.addStretch()
+        temperature_setpoint_layout.addStretch()
+            
+        temperature_setpoint_spin = QtGui.QSpinBox()
+        temperature_setpoint_spin.setRange(MIN_TEMPERATURE,MAX_TEMPERATURE)
+        temperature_setpoint_spin.setPrefix('temp')
+        temperature_setpoint_spin.setSuffix('C')
+        temperature_setpoint_layout.addWidget(temperature_setpoint_spin)
 
-        run_check = QtGui.QCheckBox('run')
-        controls_layout.addWidget(run_check)
+        temperature_setpoint_button = QtGui.QPushButton('set')
+        temperature_setpoint_layout.addWidget(temperature_setpoint_button)
 
         def set_temperature_setpoint():
-            self.temperature_setpoint = temperature_setpoint_spin.value()
-            temperature_setpoint_label.setText('temp setpoint: %d' % self.temperature_setpoint)
-        temperature_setpoint_button.clicked.connect(set_temperature_setpoint)
+            catch_labrad_error(
+                self,
+                sh_server.set_temperature_setpoint(temperature_setpoint_spin.value())
+            )
+        temperature_setpoint_button.clicked.connect(set_temperature_setpoint)        
 
-        set_temperature_setpoint()
+        def update_temperature_setpoint(temperature_setpoint):
+            self.temperature_setpoint = temperature_setpoint
+            temperature_setpoint_label.setText('temp setpoint: %d' % self.temperature_setpoint)            
+
+        sh_server.on_temperature_setpoint_changed.connect(
+            lambda c, temperature_setpoint: update_temperature_setpoint(temperature_setpoint)
+        )
+        temperature_setpoint = yield sh_server.get_temperature_setpoint()
+        update_temperature_setpoint(temperature_setpoint)
+
+        def update_label(label,state):
+            label.setText('status: ' + str(state))
+
+        for name, signal, getter, setter, option_1, option_2 in (
+                (
+                    'heating state',
+                    sh_server.on_heating_state_changed,
+                    sh_server.get_heating_state,
+                    sh_server.set_heating_state,
+                    'heating',
+                    'cooling'
+                ),
+                (
+                    'feedback state',
+                    sh_server.on_feedback_state_changed,
+                    sh_server.get_feedback_state,
+                    sh_server.set_feedback_state,
+                    True,
+                    False
+                ),
+                (
+                    'temperature limit state',
+                    sh_server.on_temperature_limit_state_changed,
+                    sh_server.get_temperature_limit_state,
+                    None,
+                    None,
+                    None
+                ),
+                (
+                    'emission current limit state',
+                    sh_server.on_emission_current_limit_state_changed,
+                    sh_server.get_emission_current_limit_state,
+                    None,
+                    None,
+                    None
+                ),
+                (
+                    'thermocouple state',
+                    sh_server.on_thermocouple_state_changed,
+                    sh_server.get_thermocouple_state,
+                    None,
+                    None,
+                    None
+                ),
+                
+        ):
+            layout = QtGui.QHBoxLayout()            
+            controls_layout.addWidget(
+                LabelWidget(
+                    name,
+                    layout
+                )
+            )
             
-        client = yield connectAsync()
-        voltmeter = client.voltmeter
-        analog_output = client.analog_output        
-        data_vault = client.data_vault
-        # yield data_vault.cd('heater',True)
-        # yield data_vault.new('heater trial',INPUTS,OUTPUTS)
+            label = QtGui.QLabel()
+            layout.addWidget(label)
+            
+            layout.addStretch()
+            
+            state = yield getter()
+            update_label(label,state)
+
+            def get_slot(label):
+                def slot(c,state):
+                    update_label(label,state)
+                return slot
+            signal.connect(get_slot(label))
+
+            if setter is None: continue
+
+            def cb(setter,option):
+                catch_labrad_error(
+                    self,
+                    setter(option)
+                )
+            for option in (option_1,option_2):
+                button = QtGui.QPushButton(str(option))
+                layout.addWidget(button)
+                button.clicked.connect(partial(cb,setter,option))
         
-        self.stop_requested = False
-        @inlineCallbacks
-        def init_voltmeter():
-            yield voltmeter.set_active_channels(VOLTMETER_CHANNELS)
-            yield voltmeter.set_sampling_duration(SAMPLING_DURATION)
-            yield voltmeter.set_triggering(False)            
-        
+        for lockable_setting in (
+                sh_server.set_feedback_state,
+                sh_server.set_heating_state,
+                sh_server.set_temperature_setpoint
+        ):
+            controls_layout.addWidget(LockWidget(sh_server,lockable_setting.ID,lockable_setting.name))
+
         def update_plot(plot,sample):
             t = traces[plot]
             t.insert(0,sample)
             t.pop()
             plots[plot].setData(t)
-
-        def get_setpoint():
-            return self.temperature_setpoint
-
-        def get_rate_setpoint(temperature):
-            temperature_setpoint = get_setpoint()
-            delta_temperature = temperature_setpoint - temperature
-            if abs(delta_temperature) > TEMPERATURE_BUFFER:
-                return MAX_RAMP_RATE * (
-                    1 if delta_temperature > 0 else -1
-                )
-            else:
-                return MAX_RAMP_RATE * delta_temperature / TEMPERATURE_BUFFER
-
+            
         @inlineCallbacks
         def loop():
-            packet = voltmeter.packet()
-            for channel in VOLTMETER_CHANNELS:                
-                packet.get_sample(channel,key=channel)
-            samples = yield packet.send()
-            time = clock()
-            temperature, emission = samples[TEMPERATURE_CHANNEL], samples[EMISSION_CHANNEL]
-            update_plot(FILAMENT_TRACE,self.previous_filament_control)
-            update_plot(EMISSION_TRACE,emission)
+            packet = sh_server.packet()
+            packet.get_filament_control()
+            packet.get_emission_current()
+            packet.get_temperature()
+            packet.get_rate()
+            packet.get_rate_setpoint()
+            
+            result = yield packet.send()
+            
+            filament_control = result.get_filament_control
+            update_plot(FILAMENT_TRACE,filament_control)
+            
+            temperature = result.get_temperature
             update_plot(TEMPERATURE_TRACE,temperature)
-            temperature_setpoint = get_setpoint()
-            update_plot(TEMPERATURE_SETPOINT_TRACE,temperature_setpoint)
-            rate_setpoint = get_rate_setpoint(temperature)
+            
+            emission_current = result.get_emission_current
+            update_plot(EMISSION_TRACE,emission_current)
+            
+            rate = result.get_rate
+            update_plot(RATE_TRACE,rate)
+            
+            rate_setpoint = result.get_rate_setpoint
             update_plot(RATE_SETPOINT_TRACE,rate_setpoint)
-            ramp_rate = ( temperature - self.previous_temperature ) / (time - self.previous_time)
-            update_plot(RATE_TRACE,ramp_rate)
-            rate_average = np.average(traces[RATE_TRACE][:int(RUNNING_AVERAGE/SAMPLING_DURATION)])
+
+            temperature_setpoint = self.temperature_setpoint
+            update_plot(TEMPERATURE_SETPOINT_TRACE,temperature_setpoint)            
+
+            rate_average = np.average(traces[RATE_TRACE][:RUNNING_AVERAGE])
             update_plot(RATE_AVERAGE,rate_average)
-            filament_control = self.previous_filament_control + DELTA_CONTROL * (1 if ramp_rate < rate_setpoint else -1)
-            if filament_control < 0.:
-                filament_control = 0.
-            yield analog_output.set_value(FILAMENT_CHANNEL,filament_control)            
-            # yield data_vault.add(
-            #     [
-            #         {
-            #             TIME:time,
-            #             FILAMENT_CONTROL:filament_control,
-            #             EMISSION_CURRENT:emission,
-            #             TEMPERATURE:temperature,
-            #             TEMPERATURE_SETPOINT:temperature_setpoint,
-            #             RATE:ramp_rate,
-            #             RATE_SETPOINT:rate_setpoint
-            #         }[key] for key in INPUTS + OUTPUTS
-            #     ]
-            # )
-            self.previous_temperature = temperature
-            self.previous_filament_control = filament_control
-            self.previous_time = time            
-            if self.stop_requested:
-                self.stop_requested = False
-            else:
-                loop()
+            
+            loop()
 
-        @inlineCallbacks
-        def init_loop():
-            yield init_voltmeter()
-            self.previous_temperature = yield voltmeter.get_sample(TEMPERATURE_CHANNEL)            
-            self.previous_filament_control = yield analog_output.get_value(FILAMENT_CHANNEL)
-            self.previous_time = clock()
-
-        self.stop_requested = False
-
-        @inlineCallbacks
-        def on_run():
-            if self.stop_requested:
-                returnValue(None)
-            if run_check.isChecked():
-                yield init_loop()
-                loop()
-            else:
-                self.stop_requested = True
-        run_check.clicked.connect(on_run)
+        loop()
 
     def closeEvent(self,event):
         if reactor.running:

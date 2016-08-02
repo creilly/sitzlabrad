@@ -73,7 +73,7 @@ class StepperMotor:
         self.set_direction(delta > 0)
         pulses = self.generate_pulses(abs(delta))
         self.position = old_position + (
-            1 if delta > 0 else -1 
+            1 if delta > 0 else -1
         ) * pulses
         if pulses != abs(delta):
             raise SetPositionStoppedException

@@ -11,6 +11,7 @@ from labrad.wrappers import connectAsync
 from labrad.types import Error
 from qtutils.labelwidget import LabelWidget
 from qtutils.lockwidget import DeviceLockWidget
+from qtutils.labraderror import catch_labrad_error
 from functools import partial
 
 RANGE = (-1000000,1000000)
@@ -24,9 +25,14 @@ class StepperMotorWidget(QtGui.QWidget):
     @inlineCallbacks
     def init_widget(self):        
         client = yield connectAsync()
+        stopping_client = yield connectAsync()
+        
         sm = client.stepper_motor
         yield sm.select_device(self.sm_name)
-        
+
+        stopping_sm = stopping_client.stepper_motor        
+        yield stopping_sm.select_device(self.sm_name)
+                
         layout = QtGui.QVBoxLayout()        
         self.setLayout(layout)
         
@@ -54,15 +60,12 @@ class StepperMotorWidget(QtGui.QWidget):
             if not is_enabled:
                 QtGui.QMessageBox.warning(self,'stepper motor disabled','stepper motor is currently disabled')
                 returnValue(None)
-            requested_position = position_spin.value()            
-            try:
-                yield sm.set_position(requested_position)
-            except Error, e:
-                QtGui.QMessageBox.warning(self,'error',e.msg)
+            requested_position = position_spin.value()
+            catch_labrad_error(self,sm.set_position(requested_position))
         set_position_button.clicked.connect(on_set_position)
 
         stop_button = QtGui.QPushButton('stop')
-        stop_button.clicked.connect(sm.stop)
+        stop_button.clicked.connect(stopping_sm.stop)
         layout.addWidget(stop_button)
 
         busy_label = QtGui.QLabel()

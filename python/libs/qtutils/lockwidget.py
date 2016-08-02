@@ -1,8 +1,10 @@
-from twisted.internet.defer import inlineCallbacks
+from twisted.internet.defer import inlineCallbacks, returnValue
 from PySide import QtGui
 from labelwidget import LabelWidget
+from labraderror import catch_labrad_error
 from functools import partial
 from labrad.types import Error
+
 class LockWidget(LabelWidget):
     def __init__(self,server,setting_id,setting_name):        
         layout = QtGui.QHBoxLayout()
@@ -22,16 +24,13 @@ class LockWidget(LabelWidget):
         def update_lock_state(is_locked):
             label_prefix = 'status'
             if is_locked:
-                try:
-                    has_lock = yield server.has_setting_lock(setting_id)
-                except Error, e:
-                    QtGui.QMessageBox.warning(
-                        self,
-                        'error',
-                        e.msg
-                    )
+                success, has_lock = yield catch_labrad_error(
+                    self,
+                    server.has_setting_lock(setting_id)                    
+                )
+                if not success:                    
                     server.is_setting_locked(setting_id).addCallback(update_lock_state)
-                    returnValue(None)
+                    returnValue(None)                
                 label_suffix = 'has lock' if has_lock else 'locked'
             else:
                 label_suffix = 'unlocked'
@@ -61,16 +60,13 @@ class LockWidget(LabelWidget):
                     is_locked
                 )
             )
-        @inlineCallbacks
         def set_lock_state(locking):
-            try:
-                if locking:
-                    yield server.lock_setting(setting_id)
-                else:
-                    yield server.unlock_setting(setting_id)
-            except Error, e:
-                QtGui.QMessageBox.warning(self,'error',e.msg)
-
+            catch_labrad_error(
+                self,
+                server.lock_setting(setting_id)
+                if locking else
+                server.unlock_setting(setting_id)
+            )
         for button, locking in (
                 (
                     lock_button,
@@ -107,15 +103,20 @@ class DeviceLockWidget(LabelWidget):
 
         @inlineCallbacks
         def update_lock_status(is_locked):
+            prefix = 'status'
             if is_locked:
-                try:
-                    has_lock = yield server.has_lock()
-                    lock_label.setText('has lock' if has_lock else 'locked')
-                except Error, e:
-                    QtGui.QMessageBox.warning(self,'error',e.msg)
+                success, has_lock = yield catch_labrad_error(
+                    self,
+                    server.has_lock()
+                )
+                if not success:
+                    is_locked = yield server.is_locked()
+                    update_lock_status(is_locked)
                     returnValue(None)
+                suffix = 'has lock' if has_lock else 'locked'
             else:
-                lock_label.setText('unlocked')
+                suffix = 'unlocked'
+            lock_label.setText(prefix + ': ' + suffix)
                 
         def on_locked_status_changed(is_locked,_,__):
             update_lock_status(is_locked)
@@ -134,13 +135,11 @@ class DeviceLockWidget(LabelWidget):
 
         server.is_locked().addCallback(update_lock_status)
 
-        @inlineCallbacks
         def set_lock(is_locking):
-            try:
-                yield server.lock() if is_locking else server.unlock()
-            except Error, e:
-                QtGui.QMessageBox.warning(self,'error',e.msg)
-                returnValue(None)
+            catch_labrad_error(
+                self,
+                server.lock() if is_locking else server.unlock()
+            )
             
         for button, is_locking in (
                 (

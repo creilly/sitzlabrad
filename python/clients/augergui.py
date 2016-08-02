@@ -16,6 +16,9 @@ from filecreation import get_filename
 from functools import partial
 import numpy as np
 import os
+from qtutils.labraderror import catch_labrad_error
+from labrad.types import Error
+from time import clock
 
 pg.setConfigOption('background','w')
 pg.setConfigOption('foreground','k')
@@ -221,10 +224,18 @@ class AugerWidget(QtGui.QWidget):
 
         client = yield connectAsync()
         vm = client.voltmeter
-        yield vm.set_active_channels(
-            [AUGER_INPUT_CHANNEL]
-        )
+        active_channels = yield vm.get_active_channels()
+        if AUGER_INPUT_CHANNEL not in active_channels:
+            try:
+                vm.set_active_channels(
+                    [AUGER_INPUT_CHANNEL] + active_channels
+                )
+            except Error, e:
+                print e.msg
+                reactor.stop()
+
         ao = client.analog_output
+        yield ao.select_device('auger output')
         
         reg = client.registry        
         yield reg.cd(REG_DIR)
@@ -340,9 +351,15 @@ class AugerWidget(QtGui.QWidget):
                 @inlineCallbacks
                 def loop(done,energy):
                     continue_token = continue_control[0]
-                    signal = yield vm.get_sample(
-                        AUGER_INPUT_CHANNEL
-                    )
+                    duration = trace.get_settings()[DURATION]/1000.
+                    start_time = clock()
+                    signals = []
+                    while clock() - start_time < duration:
+                        signal = yield vm.get_sample(
+                            AUGER_INPUT_CHANNEL
+                        )
+                        signals.append(signal)
+                    signal = sum(signals)/len(signals)
                     if continue_token:
                         trace.update_trace(energy,signal)
                         if done:
@@ -352,19 +369,14 @@ class AugerWidget(QtGui.QWidget):
                                 status_label.setText('stopped')
                         else:
                             done, energy = trace.get_next_energy()
-                            yield ao.set_value(
-                                AUGER_OUTPUT_CHANNEL,
-                                energy
-                            )
+                            yield ao.set_value(energy)
                             loop(done, energy)
                 trace = trace_to_scan
                 trace.reset()
-                duration = trace.get_settings()[DURATION]
-                yield vm.set_sampling_duration(duration/1000.)
                 done, initial_energy = trace.get_next_energy()
-                previous_energy = yield ao.get_value(AUGER_OUTPUT_CHANNEL)
+                previous_energy = yield ao.get_value()
                 delta_energy = abs(initial_energy-previous_energy)
-                yield ao.set_value(AUGER_OUTPUT_CHANNEL,initial_energy)
+                yield ao.set_value(initial_energy)
                 QtCore.QTimer.singleShot(
                     int(1000*delta_energy / AO_UPDATE_RATE),
                     partial(loop,done,initial_energy)

@@ -1,10 +1,12 @@
 from lockserver import LockServer, lockable_setting
 from labrad.server import setting, Signal
-from twisted.internet.defer import inlineCallbacks, Deferred
+from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
 import labrad
 import numpy as np
 from functools import partial
 from time import clock
+from labrad.types import Error
+from connectionmanager import ConnectionManager
 
 """
 ### BEGIN NODE INFO
@@ -33,7 +35,7 @@ ON_TEMPERATURE_LIMIT_STATE_CHANGED = 'on_temperature_limit_state_changed'
 ON_EMISSION_CURRENT_LIMIT_STATE_CHANGED = 'on_emission_current_limit_state_changed'
 ON_THERMOCOUPLE_STATE_CHANGED = 'on_thermocouple_state_changed'
 
-FEEDBACK_ON, FEEDBACK_OFF = 'feedback on', 'feedback off'
+FEEDBACK_ON, FEEDBACK_OFF = True, False
 FEEDBACK_STATES = (FEEDBACK_ON,FEEDBACK_OFF)
 
 COOLING, HEATING = 'cooling','heating'
@@ -45,18 +47,22 @@ LIMIT_STATES = (BELOW,ABOVE)
 OK, FAILED = 'ok','failed'
 THERMOCOUPLE_STATES = (OK,FAILED)
 
-TEMPERATURE, EMISSION_CURRENT = 'sample temperature', 'emission current'
-VOLTMETER_CHANNELS = (TEMPERATURE,EMISSION_CURRENT)
+TEMPERATURE, EMISSION_CURRENT, AUGER_INPUT = 'sample temperature', 'emission current', 'auger input'
+VOLTMETER_CHANNELS = (TEMPERATURE,EMISSION_CURRENT,AUGER_INPUT)
 
 FILAMENT_CONTROL = 'filament control output'
 
-class HeaterServer(LabradServer):
+FILAMENT_CONTROL_UPDATE, EMISSION_CURRENT_UPDATE, TEMPERATURE_UPDATE, RATE_UPDATE, RATE_SETPOINT_UPDATE = 0,1,2,3,4
+
+NUDGE_UP, NUDGE_DOWN = 0, 1
+
+class HeaterServer(LockServer):
     name = NAME
 
-    on_feedback_state_changed = Signal(110,ON_FEEDBACK_STATE_CHANGED,'s')
+    on_feedback_state_changed = Signal(110,ON_FEEDBACK_STATE_CHANGED,'b')
     on_heating_state_changed = Signal(111,ON_HEATING_STATE_CHANGED,'s')
     on_temperature_setpoint_changed = Signal(112,ON_TEMPERATURE_SETPOINT_CHANGED,'v')
-    on_temperature_limit_state_changed = Signal(113,ON_TEMPERATURE_LIMIT_CHANGED,'s')
+    on_temperature_limit_state_changed = Signal(113,ON_TEMPERATURE_LIMIT_STATE_CHANGED,'s')
     on_emission_current_limit_state_changed = Signal(114,ON_EMISSION_CURRENT_LIMIT_STATE_CHANGED,'s')
     on_thermocouple_state_changed = Signal(115,ON_THERMOCOUPLE_STATE_CHANGED,'s')
 
@@ -69,13 +75,13 @@ class HeaterServer(LabradServer):
         samples = yield packet.send()
         returnValue(samples)
 
-    def get_filament_control(self):
+    def _get_filament_control(self):
         ao = self.client.analog_output
-        return ao.get_value(FILAMENT_CONTROL)
+        return ao.get_value()
 
     def set_filament_control(self,filament_control):
         ao = self.client.analog_output
-        return ao.set_value(FILAMENT_CONTROL,filament_control)
+        return ao.set_value(filament_control)
 
     def update_temperature_limit_state(self,temperature):
         self._set_temperature_limit_state(
@@ -139,15 +145,24 @@ class HeaterServer(LabradServer):
 
     @inlineCallbacks
     def initServer(self):
+        self.update_requests = []
+        self.trigger_requests = []
+        self.temperature_limit_state = BELOW
+        self.emission_current_limit_state = BELOW
+        self.thermocouple_state = OK
+
         reg = self.client.registry
         reg.cd(REGISTRY_PATH)
-        self.emission_limit = yield reg.get('emission current limit')
+        self.emission_current_limit = yield reg.get('emission current limit')
         self.temperature_limit = yield reg.get('temperature limit')
         self.thermocouple_failure_limit = yield reg.get('thermocouple failure limit')
         self.ramp_rate = yield reg.get('ramp rate')
         self.filament_control_increment = yield reg.get('filament control increment')
+        self.filament_control_fast_increment = yield reg.get('filament control fast increment')
+        self.filament_control_threshold = yield reg.get('filament control threshold')
+        self.emission_current_threshold = yield reg.get('emission current threshold')
         self.temperature_buffer = yield reg.get('temperature buffer')
-        default_temperature_setpoint = yield reg.get('temperature setpoint')
+        default_temperature_setpoint = yield reg.get('default temperature')
         self._set_temperature_setpoint(default_temperature_setpoint)
         sampling_duration = yield reg.get('sampling duration')
         cm = ConnectionManager(self.client.manager)
@@ -160,8 +175,15 @@ class HeaterServer(LabradServer):
         @inlineCallbacks
         def finish_init():
             voltmeter = self.client.voltmeter
-            voltmeter.set_sampling_duration(sampling_duration)
-            voltmeter.set_active_channels(OUTPUTS)
+            yield voltmeter.lock_setting(voltmeter.set_active_channels.ID)
+            yield voltmeter.lock_setting(voltmeter.set_sampling_duration.ID)
+            yield voltmeter.lock_setting(voltmeter.set_triggering.ID)
+            yield voltmeter.set_sampling_duration(sampling_duration)
+            yield voltmeter.set_active_channels(VOLTMETER_CHANNELS)
+            yield voltmeter.set_triggering(False)
+            analog_output = self.client.analog_output
+            yield analog_output.select_device(FILAMENT_CONTROL)
+            yield analog_output.lock()
             self._set_feedback_state(FEEDBACK_OFF)
             self._set_heating_state(COOLING)
             outputs = yield self.get_outputs()
@@ -172,7 +194,7 @@ class HeaterServer(LabradServer):
             self.update_emission_current_limit_state(emission_current)
             self.update_thermocouple_state(temperature)
             self.loop()
-            LabradServer.initServer(self)
+            LockServer.initServer(self)
         def on_server_connected(server):
             print server, 'connected'
             required_servers.remove(server)
@@ -182,9 +204,9 @@ class HeaterServer(LabradServer):
         if required_servers:
             for server in required_servers:
                 print 'waiting for', server
-                cm.on_server_connect(server,partial(on_server_connected,server))                
+                cm.on_server_connect(server,partial(on_server_connected,server))
         else:
-            finish_init()
+            yield finish_init()
 
     @inlineCallbacks
     def loop(self):
@@ -197,39 +219,45 @@ class HeaterServer(LabradServer):
         rate = ( temperature - self.previous_temperature ) / ( time - self.previous_time )
         self.previous_temperature = temperature
         self.previous_time = time
-        if ABOVE in (self.emission_current_limit_state,self.temperature_limit_state):
-            filament_control = yield self.decrease_filament_control()
+        if (
+                ABOVE in (self.emission_current_limit_state,self.temperature_limit_state)
+                or
+                FAILED == self.thermocouple_state
+        ):
+            filament_control = yield self.decrease_filament_control(emission_current)
         elif self.feedback_state == FEEDBACK_ON:
-            filament_control = yield self.close_control_loop(temperature,rate)
+            filament_control = yield self.close_control_loop(emission_current,temperature,rate)
         else:
-            filament_control = yield self.get_filament_control()
+            filament_control = yield self._get_filament_control()
         while self.update_requests:
-            update_type, callback = self.update_requests.pop()
+            update_type, d = self.update_requests.pop()
             if update_type == FILAMENT_CONTROL_UPDATE:
-                callback(filament_control)
+                d.callback(filament_control)
             elif update_type == EMISSION_CURRENT_UPDATE:
-                callback(emission_current)
+                d.callback(emission_current)
             elif update_type == TEMPERATURE_UPDATE:
-                callback(temperature)
+                d.callback(temperature)
             elif update_type == RATE_UPDATE:
-                callback(rate)
+                d.callback(rate)
+            elif update_type == RATE_SETPOINT_UPDATE:
+                d.callback(self._get_rate_setpoint(temperature))
         indices_to_remove = []
         for index, trigger_request in enumerate(self.trigger_requests):
-            temperature_threshold, slope, callback = trigger_request
+            temperature_threshold, slope, d = trigger_request
             if (
                     (
                         slope == RISING and temperature > temperature_threshold
                     ) or (
-                        slope == FALLING and temperature < temperature_threshold:
+                        slope == FALLING and temperature < temperature_threshold
                     )
             ):                        
-                callback()
+                d.callback()
                 indices_to_remove.append(index)
         for index in reversed(indices_to_remove):
             self.trigger_requests.remove(index)                
         self.loop()
 
-    def get_rate_setpoint(self,temperature):
+    def _get_rate_setpoint(self,temperature):
         if self.heating_state == COOLING:
             return -1. * self.ramp_rate
         else:
@@ -239,49 +267,72 @@ class HeaterServer(LabradServer):
             else:
                 return self.ramp_rate * delta_temperature / self.temperature_buffer
 
+    def _set_temperature_setpoint(self,temperature_setpoint):
+        self.temperature_setpoint = temperature_setpoint
+        self.on_temperature_setpoint_changed(temperature_setpoint)
+
     @inlineCallbacks
-    def close_control_loop(self,temperature,rate):
-        rate_setpoint = self.get_rate_setpoint(temperature)
+    def close_control_loop(self,emission_current,temperature,rate):
+        rate_setpoint = self._get_rate_setpoint(temperature)
         if rate < rate_setpoint:
-            filament_control = yield self.increase_filament_control()
+            filament_control = yield self.increase_filament_control(emission_current)
         else:
-            filament_control = yield self.decrease_filament_control()
+            filament_control = yield self.decrease_filament_control(emission_current)
         returnValue(filament_control)
 
-    @inlineCallbacks
-    def increase_filament_control(self):
-        old_filament_control = yield self.get_filament_control()
-        new_filament_control = old_filament_control + self.filament_control_increment
-        yield self.set_filament_control(new_filament_control)
-        return self.get_filament_control()
+    def increase_filament_control(self,emission_current):
+        return self.nudge_filament_control(emission_current,NUDGE_UP)
+        
+    def decrease_filament_control(self,emission_current):
+        return self.nudge_filament_control(emission_current,NUDGE_DOWN)
 
     @inlineCallbacks
-    def decrease_filament_control(self):
-        old_filament_control = yield self.get_filament_control()
-        new_filament_control = old_filament_control - self.filament_control_increment
+    def nudge_filament_control(self,emission_current,nudge_direction):
+        old_filament_control = yield self._get_filament_control()
+        increment = (
+            self.filament_control_fast_increment
+            if (
+                    emission_current < self.emission_current_threshold
+                    and
+                    old_filament_control < self.filament_control_threshold
+            ) else
+            self.filament_control_increment
+        )
+        new_filament_control = old_filament_control + {
+            NUDGE_UP:1,
+            NUDGE_DOWN:-1
+        }[nudge_direction]*increment
         if new_filament_control < 0:
             new_filament_control = 0.
         yield self.set_filament_control(new_filament_control)
-        return self.get_filament_control()
+        filament_control = yield self._get_filament_control()
+        returnValue(filament_control)
 
     def request_update(self,update_code):
         d = Deferred()
         self.update_requests.append(
             (
                 update_code,
-                d.callback
+                d
             )
         )
         return d
 
-    @setting(10, returns='s')
+    def _set_feedback_state(self,feedback_state):
+        self.feedback_state = feedback_state
+        self.on_feedback_state_changed(feedback_state)
+
+    def _set_heating_state(self,heating_state):
+        self.heating_state=heating_state
+        self.on_heating_state_changed(heating_state)
+
+    @setting(10, returns='b')
     def get_feedback_state(self,c):
         return self.feedback_state
         
-    @lockable_setting(11, feedback_state='s')  
+    @lockable_setting(11, feedback_state='b')  
     def set_feedback_state(self,c,feedback_state):
-        self.feedback_state = feedback_state
-        self.on_feedback_state_changed(feedback_state)
+        self._set_feedback_state(feedback_state)
 
     @setting(12, returns='s')
     def get_heating_state(self,c):
@@ -289,33 +340,47 @@ class HeaterServer(LabradServer):
 
     @lockable_setting(13, heating_state='s')          
     def set_heating_state(self,c,heating_state):
-        self.heating_state=heating_state
-        self.on_heating_state_changed(heating_state)
+        self._set_heating_state(heating_state)
 
     @setting(14, returns='v')
-    def get_filament_control(self):
+    def get_filament_control(self,c):
         return self.request_update(FILAMENT_CONTROL_UPDATE)
 
     @setting(15, returns='v')
-    def get_emission_current(self):
-        return self.request_update(EMISSION_CONTROL_UPDATE)
+    def get_emission_current(self,c):
+        return self.request_update(EMISSION_CURRENT_UPDATE)
 
     @setting(16, returns='v')
-    def get_temperature(self):
+    def get_temperature(self,c):
         return self.request_update(TEMPERATURE_UPDATE)
 
     @setting(17, returns='v')
-    def get_rate(self):
+    def get_rate(self,c):
         return self.request_update(RATE_UPDATE)
 
     @setting(18, returns='v')
+    def get_rate_setpoint(self,c):
+        return self.request_update(RATE_SETPOINT_UPDATE)
+
+    @setting(19, returns='v')
     def get_temperature_setpoint(self,c):
         return self.temperature_setpoint
 
-    @lockable_setting(19, temperature_setpoint='v')
+    @lockable_setting(20, temperature_setpoint='v')
     def set_temperature_setpoint(self,c,temperature_setpoint):
-        self.temperature_setpoint = temperature_setpoint
-        self.on_temperature_setpoint_changed(temperature_setpoint)
+        self._set_temperature_setpoint(temperature_setpoint)
+
+    @setting(21,returns='s')
+    def get_temperature_limit_state(self,c):
+        return self._get_temperature_limit_state()
+
+    @setting(22,returns='s')
+    def get_emission_current_limit_state(self,c):
+        return self._get_emission_current_limit_state()
+
+    @setting(23,returns='s')
+    def get_thermocouple_state(self,c):
+        return self._get_thermocouple_state()
     
 __server__ = HeaterServer()
 

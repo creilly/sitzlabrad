@@ -10,6 +10,7 @@ from twisted.internet import reactor
 from labrad.wrappers import connectAsync
 from qtutils.labelwidget import LabelWidget
 from qtutils.lockwidget import LockWidget
+from qtutils.labraderror import catch_labrad_error
 CHANNEL = 999
 TRACE_SIZE = 150
 class VoltmeterWidget(QtGui.QWidget):
@@ -124,7 +125,7 @@ class VoltmeterWidget(QtGui.QWidget):
 
         units_d = {} 
 
-        for channel in available_channels:
+        for channel in available_channels:            
             units = yield vm.get_units(channel)
             units_d[channel] = units
             list_item = QtGui.QListWidgetItem(channel)
@@ -230,7 +231,10 @@ class VoltmeterWidget(QtGui.QWidget):
                 )
             ]
             active_channels.append(channel)
-            vm.set_active_channels(map(str,active_channels))
+            catch_labrad_error(
+                self,
+                vm.set_active_channels(map(str,active_channels))
+            )
         add_button.clicked.connect(on_add)
         def on_remove():
             channel = active_channels_widget.currentItem().data(CHANNEL)
@@ -241,7 +245,10 @@ class VoltmeterWidget(QtGui.QWidget):
                 )
             ]
             active_channels.remove(channel)
-            vm.set_active_channels(map(str,active_channels))
+            catch_labrad_error(
+                self,
+                vm.set_active_channels(map(str,active_channels))
+            )
         remove_button.clicked.connect(on_remove)
 
         def on_sampling_duration(sampling_duration):
@@ -259,8 +266,11 @@ class VoltmeterWidget(QtGui.QWidget):
         )
         
         def on_sampling_duration_clicked():
-            vm.set_sampling_duration(
-                sampling_duration_spin.value()/1000.
+            catch_labrad_error(
+                self,
+                vm.set_sampling_duration(
+                    sampling_duration_spin.value()/1000.
+                )
             )
         sampling_duration_button.clicked.connect(
             on_sampling_duration_clicked
@@ -281,7 +291,10 @@ class VoltmeterWidget(QtGui.QWidget):
         @inlineCallbacks
         def on_triggering_clicked():
             is_triggering = yield vm.is_triggering()
-            vm.set_triggering(not is_triggering)
+            catch_labrad_error(
+                self,
+                vm.set_triggering(not is_triggering)
+            )
         triggering_button.clicked.connect(on_triggering_clicked)
 
         vm.on_active_channels_changed.connect(

@@ -153,6 +153,17 @@ class InvalidDeviceException(Exception):
                 device_class
             )
         )
+
+class DeviceClassUndefinedException(Exception):
+    def __init__(self,server_class):
+        Exception.__init__(
+            self,
+            (
+                'no class device assigned for device server %s. ' +
+                'set device server attribute "device_class" to ' +
+                'appropriate device class'
+            ) % server_class.__name__
+        )
     
 def device_setting(device_setting_id,device_setting_lockable=False,**device_setting_params):
     def decorator(f):
@@ -328,7 +339,10 @@ class Device:
 class DeviceServer(LabradServer):
     sendTracebacks=False
     name = NAME
-    device_class = None
+
+    @property
+    def device_class(self):
+        raise DeviceClassUndefinedException(type(self))
 
     def __init__(self):
         self.devices = {}

@@ -3,9 +3,7 @@ from twisted.internet.defer import Deferred, inlineCallbacks, returnValue
 from twisted.internet import reactor
 import numpy as np
 from scandefs import *
-from steppermotorclient import StepperMotorClient
 from voltmeterclient import VoltmeterClient
-from delaygeneratorclient import DelayGeneratorClient
 from operator import add, sub, mul, div
 
 np.random.seed()
@@ -69,7 +67,9 @@ class ScanInput:
                 returnValue(None)
 
     def _get_input(self):
-        return None
+        raise NotImplementedError('_get_input')
+    def set_input(self):
+        raise NotImplementedError('set_input')
 
 class StepperMotorInput(ScanInput,LabradScanItem):
     OVERSHOOT = 150
@@ -77,51 +77,61 @@ class StepperMotorInput(ScanInput,LabradScanItem):
         LabradScanItem.__init__(self)
         ScanInput.__init__(self,scan_range)
         self.sm_name = sm_name
+        self.sm_server = None
         
     @inlineCallbacks
-    def get_stepper_motor_client(self):
-        client = yield self.get_client()
-        returnValue(StepperMotorClient(self.sm_name,client.stepper_motor))
+    def get_stepper_motor_server(self):
+        if self.sm_server is None:
+            client = yield self.get_client()
+            sm = client.stepper_motor
+            yield sm.select_device(self.sm_name)
+            self.sm_server = sm
+        returnValue(self.sm_server)
 
     @inlineCallbacks
     def _get_input(self):
-        smc = yield self.get_stepper_motor_client()
-        input = yield smc.get_position()
+        sm_server = yield self.get_stepper_motor_server()
+        input = yield sm_server.get_position()
         returnValue(input)
 
     @inlineCallbacks
     def set_input(self,input):
-        smc = yield self.get_stepper_motor_client()
-        old_position = yield self._get_input()
+        sm_server = yield self.get_stepper_motor_server()
+        old_position = yield self.sm_server.get_position()
         if old_position > input:
-            yield smc.set_position(
+            yield sm_server.set_position(
                 input-{
                     'lid':3000,
                 }.get(self.sm_name,self.OVERSHOOT)
             )
-        yield smc.set_position(input)
+        yield sm_server.set_position(input)
 
 class DelayGeneratorInput(ScanInput,LabradScanItem):
-    def __init__(self,dg_id,scan_range):
+    def __init__(self,dg_name,scan_range):
         LabradScanItem.__init__(self)
         ScanInput.__init__(self,scan_range)
-        self.dg_id = dg_id
+        self.dg_name = dg_name
+        self.dg_server = None
         
     @inlineCallbacks
-    def get_delay_generator_client(self):
-        client = yield self.get_client()
-        returnValue(DelayGeneratorClient(self.dg_id,client.delay_generator))
+    def get_delay_generator_server(self):
+        if self.dg_server is None:
+            client = yield self.get_client()
+            dg_server = client.delay_generator
+            yield dg_server.select_device(dg_name)
+            self.dg_server = dg_server
+        returnValue(self.dg_server)
 
     @inlineCallbacks
     def _get_input(self):
-        dgc = yield self.get_delay_generator_client()
-        input = yield dgc.get_delay()
+        dg_server = yield self.get_delay_generator_server()
+        input = yield dg_server.get_delay()
         returnValue(input)
 
     @inlineCallbacks
     def set_input(self,input):
-        dgc = yield self.get_delay_generator_client()
-        yield dgc.set_delay(input)
+        dg_server = yield self.get_delay_generator_server()
+        yield dg_server.set_delay(input)
 
 class TestScanInput(ScanInput):
     def _get_input(self):
@@ -210,34 +220,31 @@ class AugerOutput(LabradScanItem):
     @inlineCallbacks
     def initialize(self,duration):
         client = yield self.get_client()
+        yield client.analog_output.select_device(self.OUTPUT_CHANNEL)
         yield client.voltmeter.set_active_channels([self.INPUT_CHANNEL])
         yield client.voltmeter.set_sampling_duration(duration)
 
     @inlineCallbacks
     def get_output(self):
         yield self.initialized
-        client = yield self.get_client()
-        ao = yield self.set_energy(self.bottom_energy)
+        yield self.set_energy(self.bottom_energy)
         bottom_signal = yield self.get_signal()
-        print bottom_signal
-        ao = yield self.set_energy(self.top_energy)
+        yield self.set_energy(self.top_energy)
         top_signal = yield self.get_signal()
-        print top_signal
         returnValue(top_signal-bottom_signal)
 
     @inlineCallbacks
     def get_signal(self):
         client = yield self.get_client()
-        # yield client.voltmeter.get_sample(self.INPUT_CHANNEL) # clear last value
         signal = yield client.voltmeter.get_sample(self.INPUT_CHANNEL)
         returnValue(signal)
 
     @inlineCallbacks
     def set_energy(self,energy):
         client = yield self.get_client()
-        previous_energy = yield client.analog_output.get_value(self.OUTPUT_CHANNEL)
+        previous_energy = yield client.analog_output.get_value()
         delta_energy = abs(energy-previous_energy)
-        client.analog_output.set_value(self.OUTPUT_CHANNEL,energy)
+        client.analog_output.set_value(energy)
         d = Deferred()
         reactor.callLater(
             delta_energy / self.UPDATE_RATE,

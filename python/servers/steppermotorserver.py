@@ -61,33 +61,8 @@ class StepperMotorDevice(Device):
         self.sm_name = sm_name
         self.busy = False
         self.client = client
-        
-    @device_setting(17,returns='b')
-    def is_enableable(self,c):
-        return self.sm.is_enableable()
 
-    @device_setting(16,is_enabled='b')
-    def set_enabled(self,c,is_enabled):
-        self.sm.set_enabled(is_enabled)
-        self.on_enabled_status_changed(is_enabled)
-
-    @device_setting(15,returns='b')
-    def is_enabled(self,c):
-        return self.sm.is_enabled()
-
-    @device_setting(14)
-    def stop(self,c):
-        self.sm.stop()
-
-    @device_setting(13,returns='b')
-    def is_busy(self,c):
-        return self.get_busy_status()
-
-    @device_setting(12,returns='i')
-    def get_position(self,c):
-        return self.sm.get_position()
-
-    @device_setting(11,device_setting_lockable=True,position='i')
+    @device_setting(11,device_setting_lockable=True,position='i')    
     def set_position(self,c,position):
         if self.get_busy_status():
             raise StepperMotorBusyException
@@ -128,6 +103,31 @@ class StepperMotorDevice(Device):
         self.on_new_position(new_position)
         if failed:
             raise e
+
+    @device_setting(12,returns='i')
+    def get_position(self,c):
+        return self.sm.get_position()
+    
+    @device_setting(13,returns='b')
+    def is_busy(self,c):
+        return self.get_busy_status()
+
+    @device_setting(14)
+    def stop(self,c):
+        self.sm.stop()
+
+    @device_setting(15,returns='b')
+    def is_enabled(self,c):
+        return self.sm.is_enabled()
+
+    @device_setting(16,is_enabled='b')
+    def set_enabled(self,c,is_enabled):
+        self.sm.set_enabled(is_enabled)
+        self.on_enabled_status_changed(is_enabled)
+
+    @device_setting(17,returns='b')
+    def is_enableable(self,c):
+        return self.sm.is_enableable()
 
     def get_busy_status(self):
         return self.busy
