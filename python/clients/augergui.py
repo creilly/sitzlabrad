@@ -69,8 +69,8 @@ class AugerWidget(QtGui.QWidget):
             def __init__(self,settings):
                 PlotWidget.__init__(self)
                 self.trace = self.plot(
-                    [],
-                    [],
+                    [0],
+                    [0],
                     pen=None,
                     symbol='o',
                     symbolPen=None,
