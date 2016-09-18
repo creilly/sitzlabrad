@@ -21,7 +21,7 @@ from qtutils.labelwidget import LabelWidget
 pg.setConfigOption('background','w')
 pg.setConfigOption('foreground','k')
 
-MIN_TEMPERATURE, MAX_TEMPERATURE = 0, 1150
+MIN_TEMPERATURE, MAX_TEMPERATURE = 0, 1250
 RUNNING_AVERAGE = 40 # samples (i.e. 40 -> 2 second running average at 50ms per sample)
 HISTORY = 400
 TIME = 'time'

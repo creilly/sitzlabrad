@@ -47,8 +47,8 @@ LIMIT_STATES = (BELOW,ABOVE)
 OK, FAILED = 'ok','failed'
 THERMOCOUPLE_STATES = (OK,FAILED)
 
-TEMPERATURE, EMISSION_CURRENT, AUGER_INPUT = 'sample temperature', 'emission current', 'auger input'
-VOLTMETER_CHANNELS = (TEMPERATURE,EMISSION_CURRENT,AUGER_INPUT)
+TEMPERATURE, EMISSION_CURRENT, AUGER_INPUT, QMS_INPUT = 'sample temperature', 'emission current', 'auger input', 'qms input'
+VOLTMETER_CHANNELS = (TEMPERATURE,EMISSION_CURRENT,AUGER_INPUT,QMS_INPUT)
 
 FILAMENT_CONTROL = 'filament control output'
 
@@ -157,6 +157,7 @@ class HeaterServer(LockServer):
         self.temperature_limit = yield reg.get('temperature limit')
         self.thermocouple_failure_limit = yield reg.get('thermocouple failure limit')
         self.ramp_rate = yield reg.get('ramp rate')
+        self.cooling_ramp_rate = yield reg.get('cooling ramp rate')
         self.filament_control_increment = yield reg.get('filament control increment')
         self.filament_control_fast_increment = yield reg.get('filament control fast increment')
         self.filament_control_threshold = yield reg.get('filament control threshold')
@@ -259,7 +260,7 @@ class HeaterServer(LockServer):
 
     def _get_rate_setpoint(self,temperature):
         if self.heating_state == COOLING:
-            return -1. * self.ramp_rate
+            return -1. * self.cooling_ramp_rate
         else:
             delta_temperature = self.temperature_setpoint - temperature
             if abs(delta_temperature) > self.temperature_buffer:
