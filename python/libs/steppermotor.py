@@ -1,3 +1,4 @@
+from serialtransceiver import HandshakeSerialDevice
 from daqmx.task.co import GenerationStoppedException
 from time import sleep
 
@@ -72,6 +73,8 @@ class StepperMotor:
         if delta is 0: return
         self.set_direction(delta > 0)
         pulses = self.generate_pulses(abs(delta))
+        print 'pulses', pulses
+        print 'delta', delta
         self.position = old_position + (
             1 if delta > 0 else -1
         ) * pulses
@@ -175,3 +178,61 @@ class CounterStepperMotor(StepperMotor):
 
     def get_pulses(self):
         return self.step_input_task.get_count()
+
+from serialtransceiver import HandshakeSerialDevice
+
+BAUDRATE = 115200
+TIMEOUT = None
+
+HANDSHAKE_RESPONSE = 'H'
+ID_COMMAND = 'i'
+
+class RampStepperMotor(StepperMotor):
+    def __init__( 
+        self,
+        rsm_id,
+        stop_task,
+        step_task,
+        dir_task, 
+        enable_task = None,
+        init_pos = 0, 
+        init_enable = False,
+        enable_level = True,
+        forwards_level = True
+        ):
+        StepperMotor.__init__(
+            self,
+            dir_task,
+            enable_task,
+            init_pos,
+            init_enable,
+            enable_level,
+            forwards_level
+        )
+        self.rsm = HandshakeSerialDevice(
+            HANDSHAKE_RESPONSE,
+            ID_COMMAND,
+            rsm_id,
+            BAUDRATE,
+            TIMEOUT
+        )
+        self.stop_task = stop_task
+        self.step_task = step_task
+
+    def generate_pulses(self,pulses):        
+        self.step_task.start_counting()
+        self.rsm.write_line('g')
+        self.rsm.read_line() # serial device replies with 'g'
+        self.rsm.write_line(str(pulses))
+        self.rsm.read_line() # replies with response code, steps generated, and some junk
+        generated = self.step_task.get_count()
+        self.step_task.stop_counting()
+        return generated
+
+    def stop(self):
+        # stop interrupt looks for rising edge
+        self.stop_task.write_state(False) 
+        self.stop_task.write_state(True)
+
+    def get_pulses(self):        
+        return self.step_task.get_count()

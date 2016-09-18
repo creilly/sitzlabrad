@@ -6,8 +6,10 @@ class CITask(Task):
     def __init__(self,name):
         Task.__init__(self,name)
         self.count = 0
+        self.busy = False
         
     def start_counting(self):
+        self.busy = True
         daqmx(
             dll.DAQmxStartTask,
             (
@@ -23,22 +25,23 @@ class CITask(Task):
                 self.handle,
             )
         )
+        self.busy = False
 
     def _get_count(self):
         count = c_uint32(0)
         daqmx(
-            dll.DAQmxGetCICount,
+            dll.DAQmxReadCounterScalarU32,
             (
-                self.handle,
-                'lid step input',
-                byref(count)
+                self.handle, 
+                c_double(constants['DAQmx_Val_WaitInfinitely']), 
+                byref(count),
+                None
             )
         )
         return count.value        
 
     def get_count(self):
-        if self.is_done():
+        if self.busy:
             return self.count        
-        return self._get_count()
-        
-
+        else:
+            return self._get_count()

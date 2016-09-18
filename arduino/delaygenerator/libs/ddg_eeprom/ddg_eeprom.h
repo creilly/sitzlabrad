@@ -2,7 +2,6 @@
 #define DDG_EEPROM_H
 
 #include "Arduino.h"
-#include <EEPROM.h>
 
 byte read_id();
 float read_min();

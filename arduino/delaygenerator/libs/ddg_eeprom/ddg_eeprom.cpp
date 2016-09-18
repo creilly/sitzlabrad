@@ -1,5 +1,6 @@
 #include "ddg_eeprom.h"
-#include "EEPROM.h"
+#include "sitz_eeprom.h"
+#include "Arduino.h"
 
 const byte id_add = 0;
 const byte min_add = 1;
@@ -7,18 +8,6 @@ const byte max_add = 5;
 const byte offset_add = 9;
 const byte delay_add = 13;
 
-void eeprom_read(byte address, byte byte_array[], byte data_size) {
-  int i;
-  for (i = 0; i < data_size; i++) {
-    byte_array[i] = EEPROM.read(address+i);
-  }
-}
-void eeprom_write(byte address, byte byte_array[], byte data_size){
-  int i;
-  for (i = 0; i < data_size; i++) {
-    EEPROM.write(address + i, byte_array[i]);
-  }
-}
 byte read_id() {  
   byte width = sizeof(byte);
   byte byte_array[width];

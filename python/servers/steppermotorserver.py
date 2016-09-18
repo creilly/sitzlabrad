@@ -2,7 +2,7 @@ from deviceserver import DeviceServer, Device, device_setting, DeviceSignal
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import labrad
-from steppermotor import DigitalStepperMotor, CounterStepperMotor, SetPositionStoppedException, DisabledException
+from steppermotor import DigitalStepperMotor, CounterStepperMotor, RampStepperMotor, SetPositionStoppedException, DisabledException
 from daqmx.task.do import DOTask
 from daqmx.task.co import COTask
 from daqmx.task.ci import CITask
@@ -11,7 +11,7 @@ from twisted.internet.threads import deferToThread
 """
 ### BEGIN NODE INFO
 [info]
-name = Stepper Motor
+name = Test Stepper Motor
 version = 1.0
 description = provides access to all stepper motors
 [startup]
@@ -23,7 +23,7 @@ timeout = 20
 ### END NODE INFO
 """
 
-NAME = 'Stepper Motor'
+NAME = 'Test Stepper Motor'
 REGISTRY_PATH = ['','Servers',NAME]
 
 DIR_CHANNEL = 'direction channel'
@@ -34,12 +34,16 @@ ENABLE_CHANNEL = 'enable channel'
 CLASS = 'class'
 DIGITAL = 'digital'
 COUNTER = 'counter'
+RAMP = 'ramp'
 
-STEP_CHANNEL = 'step channel'
+STEP_CHANNEL = 'step channel' # step output channel for digital stepper motors, step input for ramp stepper motors
 DELAY = 'delay'
 
 STEP_OUTPUT_CHANNEL = 'step output channel'
 STEP_INPUT_CHANNEL = 'step input channel'
+
+RSM_ID = 'rsm id'
+STOP_CHANNEL = 'stop channel'
 
 ON_NEW_POSITION = 'on new position'
 ON_BUSY_STATUS_CHANGED = 'on busy status changed'
@@ -139,6 +143,7 @@ class StepperMotorDevice(Device):
 class StepperMotorServer(DeviceServer):
     name = NAME    # Will be labrad name of server
     device_class = StepperMotorDevice
+    sendTracebacks = True
 
     @inlineCallbacks
     def initServer(self):  # Do initialization here
@@ -199,6 +204,24 @@ class StepperMotorServer(DeviceServer):
                 enable_task,
                 init_pos,
             )
+        if class_type == RAMP:
+            rsm_id = yield reg.get(RSM_ID)
+
+            stop_channel = yield reg.get(STOP_CHANNEL)
+            stop_task = DOTask(stop_channel)
+
+            step_channel = yield reg.get(STEP_CHANNEL)
+            step_task = CITask(step_channel)
+            
+            sm = RampStepperMotor(
+                rsm_id,
+                stop_task,
+                step_task,
+                dir_task,
+                enable_task,
+                init_pos
+            )                
+
         self.add_device(
             stepper_motor_name,
             StepperMotorDevice(sm,stepper_motor_name,self.client)
