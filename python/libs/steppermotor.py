@@ -73,8 +73,6 @@ class StepperMotor:
         if delta is 0: return
         self.set_direction(delta > 0)
         pulses = self.generate_pulses(abs(delta))
-        print 'pulses', pulses
-        print 'delta', delta
         self.position = old_position + (
             1 if delta > 0 else -1
         ) * pulses
