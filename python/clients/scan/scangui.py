@@ -1,4 +1,5 @@
 import sys
+import traceback
 from PySide import QtGui, QtCore
 if QtCore.QCoreApplication.instance() is None:
     app = QtGui.QApplication(sys.argv)
@@ -13,9 +14,18 @@ from jsonmodel import JsonModel
 from pyqtgraph import GraphicsWindow, PlotItem, PlotDataItem
 from labrad.wrappers import connectAsync
 from labrad.types import Error
+from util import load_json
 
 from scandefs import *
-from scanitems import AugerOutput, TestScanInput, TestOutput, StepperMotorInput, VoltmeterOutput, DelayGeneratorInput, VoltmeterMathOutput
+from scanitems import \
+    AugerOutput, \
+    TestScanInput, \
+    TestOutput, \
+    StepperMotorInput, \
+    VoltmeterOutput, \
+    DelayGeneratorInput, \
+    DelayGeneratorChainInput, \
+    VoltmeterMathOutput
 from util import mangle
 from filecreation import get_datetime
 
@@ -23,7 +33,8 @@ from filecreation import get_datetime
 INPUTS = {
     TEST:TestScanInput,
     STEPPER_MOTOR:StepperMotorInput,
-    DELAY_GENERATOR:DelayGeneratorInput
+    DELAY_GENERATOR:DelayGeneratorInput,
+    DELAY_GENERATOR_CHAIN:DelayGeneratorChainInput
 }
 
 # scan outputs and associated keys
@@ -52,7 +63,7 @@ class ScanPlot(PlotItem):
         output = scan[OUTPUT]
         if type(output) is dict:
             y_label = output.get(NAME,'output')
-            y_units = output.get(UNITS,'arb')            
+            y_units = output.get(UNITS,'arb')       
         else:
             y_label = 'output'
             y_units = 'arb'
@@ -74,6 +85,8 @@ class ScanPlot(PlotItem):
         # are we setting input to optimal value of scan result?
         self.optimizing = scan.get(OPTIMIZE,False)
         # if we have multiple outputs and are optimizing, which output to optimize?
+        self.checking_optimize = scan.get(CHECK_OPTIMIZE,False)
+        self.click_deferred = None
         self.optimize_axis = scan.get(OPTIMIZE_AXIS,0)
         # are we saving scan data to datavault?
         self.saving = scan.get(SAVE,False)
@@ -81,6 +94,14 @@ class ScanPlot(PlotItem):
         self.returning = scan.get(RETURN,False)
         self.scan = scan
         self.__parent = parent
+
+    def mouseClickEvent(self,event):
+        if self.click_deferred is not None:
+            self.click_deferred.callback(self.getViewBox().mapSceneToView(event.scenePos()).x())
+            event.accept()
+            self.click_deferred = None
+        else:
+            PlotItem.mouseClickEvent(self,event)
 
     # performs set up for scan
     def start(self):
@@ -252,13 +273,33 @@ class ScanPlot(PlotItem):
         )
         if self.fit_curve not in self.listDataItems():
             self.show_fit()
-            yield self.input.set_input(
-                int(
-                    np.round(
-                        params[0]
-                    )
+            input = int(np.round(params[0]))
+            if self.checking_optimize:                
+                result = QtGui.QMessageBox.question(
+                    self.__parent,
+                    'check optimize',
+                    'is optimize result of %d ok?' % input,
+                    QtGui.QMessageBox.Yes | QtGui.QMessageBox.No
                 )
-            )
+                if result == QtGui.QMessageBox.No:
+                    message_box = QtGui.QMessageBox(self.__parent)
+                    click_button = message_box.addButton('click',QtGui.QMessageBox.AcceptRole)
+                    enter_button = message_box.addButton('enter',QtGui.QMessageBox.RejectRole)
+                    message_box.setText('specify how to enter location')
+                    message_box.setInformativeText('click location on graph or enter in value?')
+                    message_box.exec_()
+                    if message_box.clickedButton() == click_button:
+                        self.click_deferred = Deferred()
+                        input = yield self.click_deferred
+                        input = int(np.round(input))
+                    else:
+                        new_input, result = QtGui.QInputDialog.getInt(
+                            self.__parent,
+                            'enter location',
+                            'location',
+                            input
+                        )
+            yield self.input.set_input(input)
 
     @staticmethod
     def gaussian(x,mean,std,amplitude,offset):
@@ -324,10 +365,51 @@ class ScanExecWidget(QtGui.QWidget):
             self.running = True
             # scan index identifies scan object current executing
             self.scan_index = 0
-            # lets loop() functio know that current scan object requires initialization
+            # lets loop() function know that current scan object requires initialization
             self.init_scan = True
             # extract scan json object from scan tree
             scans = model.to_json()
+            for scan in scans:
+                print scan
+                if VARIABLES in scan and scan.pop(VARIABLES):
+                    print 'variables'
+                    scans.remove(scan)
+                    variables = scan
+                    for variable, value in variables.items():
+                        if value == PROMPT:
+                            succeeded = False
+                            while not succeeded:
+                                raw_value, ok = QtGui.QInputDialog.getText(
+                                    self.__parent,
+                                    'set variable',
+                                    'input json value for "%s" variable' % variable                        
+                                )
+                                if ok:
+                                    try:
+                                        value = load_json(raw_value)
+                                        succeeded = True
+                                    except ValueError:
+                                        QtGui.QMessageBox.warning(
+                                            self.__parent,
+                                            'invalid json',
+                                            'input is not valid json. try again'
+                                        )
+                        def swap_value(node):
+                            if type(node) is dict:
+                                for k, v in node.items():
+                                    if v == variable:
+                                        node[k]=value
+                                    else:
+                                        swap_value(v)
+                            elif type(node) is list:
+                                for i,v in enumerate(node):
+                                    if v == variable:
+                                        node[i]=value
+                                    else:
+                                        swap_value(v)
+                        swap_value(scans)
+                break
+
             # destroy previously existing scan objects
             for scan_plot in self.scan_plots:
                 plot_group.removeItem(scan_plot)

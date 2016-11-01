@@ -33,6 +33,10 @@ class ScanInput:
     def __init__(self,scan_range):
         self.scan_range = scan_range
         self._scan_range_d = self.init_range()
+        self._on_start_d = self.on_start()
+
+    def on_start(self):
+        pass
 
     @inlineCallbacks
     def init_range(self):
@@ -56,6 +60,8 @@ class ScanInput:
         if self._scan_range_d is not None:
             yield self._scan_range_d
             self._scan_range_d = None
+        if self._on_start_d is not None:
+            yield self._on_start_d
         sr = self.scan_range
         scan_class = sr[CLASS]
         if scan_class == RANGE:
@@ -63,7 +69,7 @@ class ScanInput:
                 input = self.scan_list.pop(0)
                 yield self.set_input(input)
                 returnValue(input)
-            else:
+            else:                
                 returnValue(None)
 
     def _get_input(self):
@@ -72,12 +78,19 @@ class ScanInput:
         raise NotImplementedError('set_input')
 
 class StepperMotorInput(ScanInput,LabradScanItem):
-    OVERSHOOT = 150
+    OVERSHOOT = 500
     def __init__(self,sm_name,scan_range):
-        LabradScanItem.__init__(self)
-        ScanInput.__init__(self,scan_range)
         self.sm_name = sm_name
         self.sm_server = None
+        LabradScanItem.__init__(self)
+        ScanInput.__init__(self,scan_range)
+
+    @inlineCallbacks
+    def on_start(self):
+        sm = yield self.get_stepper_motor_server()
+        is_enableable = yield sm.is_enableable()
+        if is_enableable:
+            yield sm.set_enabled(True)
         
     @inlineCallbacks
     def get_stepper_motor_server(self):
@@ -102,23 +115,28 @@ class StepperMotorInput(ScanInput,LabradScanItem):
             yield sm_server.set_position(
                 input-{
                     'lid':3000,
+                    'kdp':500,
+                    'bbo':500,
+                    'probe vertical':10000,
+                    'pol':20,
+                    'pdl':75                    
                 }.get(self.sm_name,self.OVERSHOOT)
             )
         yield sm_server.set_position(input)
 
 class DelayGeneratorInput(ScanInput,LabradScanItem):
     def __init__(self,dg_name,scan_range):
-        LabradScanItem.__init__(self)
-        ScanInput.__init__(self,scan_range)
         self.dg_name = dg_name
         self.dg_server = None
+        LabradScanItem.__init__(self)
+        ScanInput.__init__(self,scan_range)
         
     @inlineCallbacks
     def get_delay_generator_server(self):
         if self.dg_server is None:
             client = yield self.get_client()
             dg_server = client.delay_generator
-            yield dg_server.select_device(dg_name)
+            yield dg_server.select_device(self.dg_name)
             self.dg_server = dg_server
         returnValue(self.dg_server)
 
@@ -133,6 +151,45 @@ class DelayGeneratorInput(ScanInput,LabradScanItem):
         dg_server = yield self.get_delay_generator_server()
         yield dg_server.set_delay(input)
 
+class DelayGeneratorChainInput(ScanInput,LabradScanItem):
+    def __init__(self,master,slaves,scan_range):
+        self.master = master
+        self.slaves = slaves
+        self.dg_server = None
+        LabradScanItem.__init__(self)
+        ScanInput.__init__(self,scan_range)
+
+    @inlineCallbacks
+    def get_delay_generator_server(self):
+        if self.dg_server is None:
+            client = yield self.get_client()
+            dg = client.delay_generator
+            self.dg_server = dg
+            yield dg.select_device(self.master)
+            master_delay = yield dg.get_delay()
+            self.deltas = {}
+            for slave in self.slaves:
+                yield dg.select_device(slave)
+                slave_delay = yield dg.get_delay()
+                self.deltas[slave] = slave_delay - master_delay
+        returnValue(self.dg_server)
+        
+    @inlineCallbacks
+    def _get_input(self):
+        dg = yield self.get_delay_generator_server()
+        yield dg.select_device(self.master)
+        delay = yield dg.get_delay()
+        returnValue(delay)
+
+    @inlineCallbacks
+    def set_input(self,input):
+        dg = yield self.get_delay_generator_server()
+        yield dg.select_device(self.master)
+        yield dg.set_delay(input)
+        for slave in self.slaves:
+            yield dg.select_device(slave)
+            yield dg.set_delay(input+self.deltas[slave])
+
 class TestScanInput(ScanInput):
     def _get_input(self):
         return np.random.randint(COUNT)
@@ -146,10 +203,16 @@ class VoltmeterOutput(LabradScanItem):
         LabradScanItem.__init__(self)
         self.channel = channel
         self.shots = shots
+        self.channel_initialized = False
 
     @inlineCallbacks
     def get_voltmeter_client(self):
         client = yield self.get_client()
+        if not self.channel_initialized:
+            active_channels = yield client.voltmeter.get_active_channels()
+            if self.channel not in active_channels:
+                yield client.voltmeter.set_active_channels(active_channels + [self.channel])
+            self.channel_initialized = True
         returnValue(VoltmeterClient(client.voltmeter,self.channel))
 
     @inlineCallbacks

@@ -31,7 +31,7 @@ class ValueItem(JSONItem):
             TREE_COLUMN:'value',
             VALUE_COLUMN:json.dumps(self.value)
         }.get(column,None)
-
+    
     def set_data(self,column,data):
         try:
             self.value = json.loads(data)
