@@ -41,7 +41,7 @@ class DelayGeneratorWidget(QtGui.QWidget):
             catch_labrad_error(
                 self,
                 dg_server.set_delay(delay_spin.value())
-            )                
+            )
         set_delay_button.clicked.connect(on_clicked)
         
 
