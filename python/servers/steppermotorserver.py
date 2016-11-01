@@ -11,7 +11,7 @@ from twisted.internet.threads import deferToThread
 """
 ### BEGIN NODE INFO
 [info]
-name = Test Stepper Motor
+name = Stepper Motor
 version = 1.0
 description = provides access to all stepper motors
 [startup]
@@ -23,7 +23,7 @@ timeout = 20
 ### END NODE INFO
 """
 
-NAME = 'Test Stepper Motor'
+NAME = 'Stepper Motor'
 REGISTRY_PATH = ['','Servers',NAME]
 
 DIR_CHANNEL = 'direction channel'
@@ -157,7 +157,7 @@ class StepperMotorServer(DeviceServer):
         yield DeviceServer.initServer(self)
 
     @inlineCallbacks
-    def add_stepper_motor(self,stepper_motor_name):        
+    def add_stepper_motor(self,stepper_motor_name):
         reg = self.client.registry
         yield reg.cd(REGISTRY_PATH+[stepper_motor_name])
         
@@ -177,7 +177,6 @@ class StepperMotorServer(DeviceServer):
             class_type = yield reg.get(CLASS)
         else:
             class_type = DIGITAL
-            
         if class_type == DIGITAL:
             step_channel = yield reg.get(STEP_CHANNEL)
             step_task = DOTask(step_channel)
