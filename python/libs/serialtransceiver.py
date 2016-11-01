@@ -28,7 +28,8 @@ class SerialLineTransceiver:
                 raise SerialLineTransceiverException('timeout before line read')
             s += c
             if s[-1 * len(tsr):] == tsr:
-                return s[:-1 * len(tsr)]
+                s = s[:-1*len(tsr)]
+                return s
 
     @staticmethod
     def enumerate_serial_ports():
@@ -73,13 +74,21 @@ class HandshakeSerialDevice(SerialLineTransceiver):
                 ser = Serial(
                     port=port,
                     baudrate=baudrate,
-                    timeout=timeout
+                    timeout=10 # give the device this much time to handshake
                 )
             except SerialException, s:
                 continue
             try:
                 line_trans = SerialLineTransceiver(ser)
                 if cls._handshakes(line_trans,handshake_char) and id == cls._get_id(line_trans,id_char):
+                    ser.close()
+                    ser = Serial(
+                        port=port,
+                        baudrate=baudrate,
+                        timeout=timeout
+                    )
+                    line_trans = SerialLineTransceiver(ser)
+                    cls._handshakes(line_trans,handshake_char)
                     return ser
             except SerialLineTransceiverException:
                 continue
@@ -93,5 +102,7 @@ class HandshakeSerialDevice(SerialLineTransceiver):
     @staticmethod
     def _get_id(line_trans,id_char):
         line_trans.write_line(id_char)
-        return int(line_trans.read_line())
+        id = int(line_trans.read_line())
+        return_code = line_trans.read_line()
+        return id
 
