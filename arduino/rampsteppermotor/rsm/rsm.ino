@@ -2,7 +2,7 @@
 #include "rsm_eeprom.h" // accesses rsm configuration params
 
 // pins
-const byte step_pin = 2; // step output to stepper motor driver
+const byte step_pin = 13; // step output to stepper motor driver
 const byte stop_pin = 3; // interrupt pin to stop pulse generation. must be pin 2 or 3
 
 // stepper motor parameters to be read from eeprom
@@ -17,6 +17,7 @@ const char generate_steps_command = 'g';
 // responses
 const char generate_steps_ack = 'g';
 const char invalid_command_response = 'x';
+const char id_response_code = 's';
 
 // return codes
 const char completed_code = 'c';
@@ -42,7 +43,7 @@ void init_pins() {
   pinMode(step_pin,OUTPUT);
   digitalWrite(step_pin,LOW);
   
-  pinMode(stop_pin,INPUT_PULLUP);
+  pinMode(stop_pin,INPUT);
   attachInterrupt(digitalPinToInterrupt(stop_pin), on_stop, RISING);
 }
 
@@ -67,7 +68,8 @@ String handle_command(char command) {
   switch (command) {
   case id_command:
     {
-      response = String(device_id);
+      Serial.println(device_id);
+      response = String(id_response_code);
     }
     break;
   case generate_steps_command:

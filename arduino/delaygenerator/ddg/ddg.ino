@@ -81,7 +81,8 @@ char handle_command(char command) {
     Serial.println(send_delay_response);
     return set_delay(Serial.readStringUntil(term_char).toInt());
   default:
-    return command_failure_response;
+    return command;
+    //return command_failure_response;
   }
 }
 
