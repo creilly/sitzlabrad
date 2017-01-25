@@ -24,6 +24,7 @@ class StepperMotor:
         enable_level = True,
         forwards_level = True
         ):
+        self._is_busy = False
         self.enable_task = enable_task
         self.enable_level = enable_level
         if enable_task is not None:
@@ -72,7 +73,9 @@ class StepperMotor:
         delta = position - old_position
         if delta is 0: return
         self.set_direction(delta > 0)
+        self._is_busy = True
         pulses = self.generate_pulses(abs(delta))
+        self._is_busy = False
         self.position = old_position + (
             1 if delta > 0 else -1
         ) * pulses
@@ -80,7 +83,12 @@ class StepperMotor:
             raise SetPositionStoppedException
 
     def get_position(self):
-        return self.position
+        return self.position + (
+            0 if not self.is_busy() else {
+                self.FORWARDS:+1,
+                self.BACKWARDS:-1
+            }[self.get_direction()] * self.get_pulses()
+        )    
     
     def generate_pulses(self,pulses):
         raise NotImplementedError
@@ -89,7 +97,10 @@ class StepperMotor:
         raise NotImplementedError
 
     def stop(self):
-        raise NotImplementedError        
+        raise NotImplementedError
+
+    def is_busy(self):
+        return self._is_busy
 
 class DigitalStepperMotor(StepperMotor):
     def __init__( 
