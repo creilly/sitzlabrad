@@ -63,25 +63,18 @@ class StepperMotorDevice(Device):
         Device.__init__(self)
         self.sm = sm
         self.sm_name = sm_name
-        self.busy = False
         self.client = client
 
     @device_setting(11,device_setting_lockable=True,position='i')    
     def set_position(self,c,position):
-        if self.get_busy_status():
+        if self.sm.is_busy():
             raise StepperMotorBusyException
         sm = self.sm
         old_position = sm.get_position()
-        self.set_busy_status(True)
         try:
             def update_position(_):
-                if self.get_busy_status():
-                    self.on_new_position(
-                        old_position + {
-                            sm.FORWARDS:1,
-                            sm.BACKWARDS:-1
-                        }[sm.get_direction()]*sm.get_pulses()
-                    )
+                if self.sm.is_busy():
+                    self.on_new_position(sm.get_position())
                     reactor.callLater(
                         UPDATE_INTERVAL,
                         update_position,
@@ -92,6 +85,7 @@ class StepperMotorDevice(Device):
                 update_position,
                 None
             )
+            self.on_busy_status_changed(True)
             yield deferToThread(
                 sm.set_position,
                 position
@@ -99,8 +93,8 @@ class StepperMotorDevice(Device):
             failed = False
         except (SetPositionStoppedException,DisabledException), e:
             failed = True
+        self.on_busy_status_changed(False)
         new_position = sm.get_position()
-        self.set_busy_status(False)
         reg = self.client.registry
         yield reg.cd(REGISTRY_PATH+[self.sm_name])
         yield reg.set(INIT_POS,int(new_position))
@@ -114,7 +108,7 @@ class StepperMotorDevice(Device):
     
     @device_setting(13,returns='b')
     def is_busy(self,c):
-        return self.get_busy_status()
+        return self.sm.is_busy()
 
     @device_setting(14)
     def stop(self,c):
@@ -132,13 +126,8 @@ class StepperMotorDevice(Device):
     @device_setting(17,returns='b')
     def is_enableable(self,c):
         return self.sm.is_enableable()
-
-    def get_busy_status(self):
-        return self.busy
     
-    def set_busy_status(self,busy_status):
-        self.busy = busy_status
-        self.on_busy_status_changed(busy_status)            
+        
 
 class StepperMotorServer(DeviceServer):
     name = NAME    # Will be labrad name of server
