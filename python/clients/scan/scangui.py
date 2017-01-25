@@ -15,7 +15,7 @@ from pyqtgraph import GraphicsWindow, PlotItem, PlotDataItem
 from labrad.wrappers import connectAsync
 from labrad.types import Error
 from util import load_json
-
+from datetime import datetime
 from scandefs import *
 from scanitems import \
     AugerOutput, \
@@ -47,9 +47,6 @@ OUTPUTS = {
 
 # number of points in optimized fit curve
 FIT_POINTS = 100
-
-# directory in datavault to store scan data
-data_vault_dir = ['scans']
 
 # one of these are instantiated for every scan in scan list
 class ScanPlot(PlotItem):
@@ -100,8 +97,6 @@ class ScanPlot(PlotItem):
             self.click_deferred.callback(self.getViewBox().mapSceneToView(event.scenePos()).x())
             event.accept()
             self.click_deferred = None
-        else:
-            PlotItem.mouseClickEvent(self,event)
 
     # performs set up for scan
     def start(self):
@@ -121,7 +116,16 @@ class ScanPlot(PlotItem):
             # list of folders (trunk to leaf) for dataset directory
             save_dir = scan.get(SAVE_DIR,[])
             # go to scans dir in dv
-            yield data_vault.cd(data_vault_dir+save_dir,True)
+            dt = datetime.now()
+            yield data_vault.cd(
+                [
+                    '',
+                    str(dt.year),
+                    '%02d'%dt.month,
+                    '%02d'%dt.day
+                ]+save_dir,
+                True
+            )                
             independent_variables = [
                 '%s [%s]' % (
                     scan[INPUT].get(NAME,'input'),
@@ -147,15 +151,19 @@ class ScanPlot(PlotItem):
                     save_name = default_name
             # create new dataset                
             yield data_vault.new(
-                str(save_name),
+                '-'.join(
+                    [
+                        '%02d'%t for t in (dt.hour,dt.minute,dt.second)
+                    ]+[str(save_name)]
+                ),
                 independent_variables,
                 dependent_variables
             )
-            # make note of dataset creation
-            yield data_vault.add_parameter(
-                'time',
-                get_datetime()
-            )
+            # # make note of dataset creation
+            # yield data_vault.add_parameter(
+            #     'time',
+            #     get_datetime()
+            # )
             self.data_vault = data_vault
         # instantiate scan input object
         self.input = INPUTS[
@@ -370,9 +378,7 @@ class ScanExecWidget(QtGui.QWidget):
             # extract scan json object from scan tree
             scans = model.to_json()
             for scan in scans:
-                print scan
                 if VARIABLES in scan and scan.pop(VARIABLES):
-                    print 'variables'
                     scans.remove(scan)
                     variables = scan
                     for variable, value in variables.items():
