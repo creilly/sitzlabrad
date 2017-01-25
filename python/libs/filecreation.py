@@ -43,3 +43,27 @@ def get_file_dialog():
     root.withdraw()
 
     return tkFileDialog.askopenfilename()
+
+def get_labrad_dir(*dirs):
+    dt = datetime.now()
+    return [''] + [
+        '%02d' % d for d in (
+            dt.year,
+            dt.month,
+            dt.day            
+        )
+    ] + list(dirs)
+
+def get_labrad_filename(description=None):
+    dt = datetime.now()
+    return '_'.join(
+        [
+            '%02d' % d for d in (
+                dt.hour,
+                dt.minute,
+                dt.second
+            )
+        ] + (
+            [description] if description is not None else []
+        )
+    )
