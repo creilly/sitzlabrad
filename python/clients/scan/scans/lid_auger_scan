@@ -1,1 +1,0 @@
-[{"input": {"units": "steps", "args": {"sm name": "lid", "scan_range": {"relative": false, "start": 175000, "step": 100, "stop": 250000, "class": "range"}}, "name": "lid position", "class": "stepper motor"}, "name": "moly auger lid scan", "output": {"units": "volts", "args": {"channel": "auger input", "shots": 5}, "name": "moly auger signal", "class": "voltmeter"}}]

@@ -2,6 +2,7 @@ from deviceserver import device_setting, Device, DeviceSignal, DeviceServer
 from labrad.server import LabradServer, setting, Signal
 from twisted.internet.defer import inlineCallbacks, Deferred, returnValue
 from delaygenerator import DelayGenerator
+from twisted.internet.threads import deferToThread
 
 """
 ### BEGIN NODE INFO
@@ -32,11 +33,12 @@ class DelayGeneratorDevice(Device):
 
     @device_setting(10, returns='i')
     def get_delay(self,c):
-        return self.dg.get_delay()
+        delay = yield deferToThread(self.dg.get_delay)
+        returnValue(delay)
 
     @device_setting(13, device_setting_lockable=True, delay='i')
     def set_delay(self,c,delay):
-        self.dg.set_delay(delay)
+        yield deferToThread(self.dg.set_delay,delay)
         self.on_new_delay(delay)
 
 class DelayGeneratorServer(DeviceServer):
