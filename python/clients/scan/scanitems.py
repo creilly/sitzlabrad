@@ -52,7 +52,7 @@ class ScanInput:
                 start = current_input - delta / 2
                 stop = current_input + delta / 2
             self.scan_list = list(
-                np.arange(start,stop,step)
+                np.arange(start,stop,step) if start < stop else np.arange(stop,start,step)[::-1]
             )
         
     @inlineCallbacks
@@ -79,10 +79,15 @@ class ScanInput:
 
 class StepperMotorInput(ScanInput,LabradScanItem):
     OVERSHOOT = 500
+    FORWARDS, BACKWARDS = 0,1
     def __init__(self,sm_name,scan_range):
         self.sm_name = sm_name
         self.sm_server = None
-        LabradScanItem.__init__(self)
+        if scan_range.get(CLASS,RANGE) == RANGE:
+            self.direction = self.FORWARDS if scan_range[START] < scan_range[STOP] else self.BACKWARDS
+        else:
+            self.direction = self.FORWARDS
+        LabradScanItem.__init__(self)        
         ScanInput.__init__(self,scan_range)
 
     @inlineCallbacks
@@ -111,9 +116,12 @@ class StepperMotorInput(ScanInput,LabradScanItem):
     def set_input(self,input):
         sm_server = yield self.get_stepper_motor_server()
         old_position = yield self.sm_server.get_position()
-        if old_position > input:
+        if {
+            self.FORWARDS:old_position > input,
+            self.BACKWARDS:old_position < input
+        }[self.direction]:
             yield sm_server.set_position(
-                input-{
+                input-{self.FORWARDS:+1,self.BACKWARDS:-1}[self.direction]*{
                     'lid':3000,
                     'kdp':500,
                     'bbo':500,
