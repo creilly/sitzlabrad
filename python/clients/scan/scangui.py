@@ -25,7 +25,8 @@ from scanitems import \
     VoltmeterOutput, \
     DelayGeneratorInput, \
     DelayGeneratorChainInput, \
-    VoltmeterMathOutput
+    VoltmeterMathOutput, \
+    LineScannerInput
 from util import mangle
 from filecreation import get_datetime
 
@@ -33,6 +34,7 @@ from filecreation import get_datetime
 INPUTS = {
     TEST:TestScanInput,
     STEPPER_MOTOR:StepperMotorInput,
+    LINE_SCANNER:LineScannerInput,
     DELAY_GENERATOR:DelayGeneratorInput,
     DELAY_GENERATOR_CHAIN:DelayGeneratorChainInput
 }
@@ -44,6 +46,9 @@ OUTPUTS = {
     VOLTMETER_MATH:VoltmeterMathOutput,
     AUGER:AugerOutput
 }
+
+# fraction of total points in scan to use for local peak finding
+PEAK_FRACTION = .1
 
 # number of points in optimized fit curve
 FIT_POINTS = 100
@@ -195,13 +200,16 @@ class ScanPlot(PlotItem):
         if self.is_optimizing():
             # initialize fit curve
             self.fit_curve = PlotDataItem(
-                name='fit (%s)' % outputs[
+                name='max (%s)' % outputs[
                     self.optimize_axis
                 ].get(
                     NAME,
                     'output %d' % (self.optimize_axis+1)
                 ),
-                pen={'color':'BBB','width':2}
+                pen=None,
+                symbolSize=10,
+                symbolBrush=None,
+                symbolPen={'color':'BBB','width':2}
             )
         # initialize data curves
         self.curves = [
@@ -257,32 +265,54 @@ class ScanPlot(PlotItem):
     def is_returning(self):
         return self.returning    
 
-    # fit data to gaussian to find input value that optimizes output and set input to that value
+    # do rolling peak search
     @inlineCallbacks
     def optimize_input(self):        
         x_arr = np.array(self.x_data)
         y_arr = np.array(zip(*self.y_datas)[self.optimize_axis])
-        params = self.estimate_gaussian_parameters(
-            x_arr,y_arr
-        )
-        try:
-            params, _ = curve_fit(
-                self.gaussian,
-                x_arr,
-                y_arr,
-                params
-            )
-        except RuntimeError:
-            pass
-        x_fit = np.linspace(x_arr.min(),x_arr.max(),FIT_POINTS)            
+        params = None
+        total_length = len(x_arr)
+        peak_width = int(total_length*PEAK_FRACTION)
+        if peak_width < 3:
+            peak_width = 3
+        tallest_peak = None
+        tallest_peak_height = None
+        if total_length > 2:
+            left_edge = 0
+            while left_edge+peak_width < total_length:
+                a,b,c = np.polyfit(
+                    x_arr[
+                        left_edge:left_edge+peak_width
+                    ],y_arr[
+                        left_edge:left_edge+peak_width
+                    ],
+                    2
+                )
+                peak = -b/(2.*a)
+                peak_height = c - b**2/(4.*a)
+                if (
+                    x_arr[left_edge] < peak
+                ) and (
+                    peak < x_arr[left_edge+peak_width]
+                ) and (
+                    a < 0
+                ) and ( 
+                    peak_height > tallest_peak_height 
+                ):
+                    tallest_peak = peak
+                    tallest_peak_height = peak_height
+                left_edge = left_edge + 1
+        if tallest_peak is None:
+            tallest_peak = x_arr[y_arr.argmax()]
+            tallest_peak_height = y_arr.max()
         self.fit_curve.setData(
-            x_fit,
-            self.gaussian(x_fit,*params)
+            [tallest_peak],
+            [tallest_peak_height]
         )
         if self.fit_curve not in self.listDataItems():
             self.show_fit()
-            input = int(np.round(params[0]))
-            if self.checking_optimize:                
+            input = int(np.round(tallest_peak)) # !!! we round here (is this causing you problems?)
+            if self.checking_optimize:
                 result = QtGui.QMessageBox.question(
                     self.__parent,
                     'check optimize',
@@ -309,44 +339,44 @@ class ScanPlot(PlotItem):
                         )
             yield self.input.set_input(input)
 
-    @staticmethod
-    def gaussian(x,mean,std,amplitude,offset):
-        return amplitude * np.exp(- 1. / 2. * np.square( ( x - mean ) / std) ) + offset
+    # @staticmethod
+    # def gaussian(x,mean,std,amplitude,offset):
+    #     return amplitude * np.exp(- 1. / 2. * np.square( ( x - mean ) / std) ) + offset
 
-    @staticmethod
-    def estimate_gaussian_parameters(x,y):
-        min = y.min()
-        max = y.max()
-        offset = min
-        amplitude = max - min
-        mean_index = y.argmax()
-        mean = x[mean_index]
-        threshold = min + (max - min) / 2
-        right_estimate = None
-        index = mean_index
-        while True:
-            if index == len(y):
-                break
-            if y[index] < threshold:
-                right_estimate = abs(x[index] - mean) / 2.355 * 2
-            index += 1
-        left_estimate = None
-        index = mean_index
-        while True:
-            if index < 0:
-                break
-            if y[index] < threshold:
-                left_estimate = abs(x[index] - mean) / 2.355 * 2
-            index -= 1
-        if right_estimate is None and left_estimate is None:
-            std = abs(x[len(y)/2]-x[0])
-        elif right_estimate is None:
-            std = left_estimate
-        elif left_estimate is None:
-            std = right_estimate
-        else:
-            std = ( left_estimate + right_estimate ) / 2.
-        return (mean,std,amplitude,offset)
+    # @staticmethod
+    # def estimate_gaussian_parameters(x,y):
+    #     min = y.min()
+    #     max = y.max()
+    #     offset = min
+    #     amplitude = max - min
+    #     mean_index = y.argmax()
+    #     mean = x[mean_index]
+    #     threshold = min + (max - min) / 2
+    #     right_estimate = None
+    #     index = mean_index
+    #     while True:
+    #         if index == len(y):
+    #             break
+    #         if y[index] < threshold:
+    #             right_estimate = abs(x[index] - mean) / 2.355 * 2
+    #         index += 1
+    #     left_estimate = None
+    #     index = mean_index
+    #     while True:
+    #         if index < 0:
+    #             break
+    #         if y[index] < threshold:
+    #             left_estimate = abs(x[index] - mean) / 2.355 * 2
+    #         index -= 1
+    #     if right_estimate is None and left_estimate is None:
+    #         std = abs(x[len(y)/2]-x[0])
+    #     elif right_estimate is None:
+    #         std = left_estimate
+    #     elif left_estimate is None:
+    #         std = right_estimate
+    #     else:
+    #         std = ( left_estimate + right_estimate ) / 2.
+    #     return (mean,std,amplitude,offset)
 
 class ScanExecWidget(QtGui.QWidget):
     def __init__(self,model):
@@ -530,6 +560,7 @@ class ScanExecWidget(QtGui.QWidget):
                         'error on scan initialization',
                         e.msg if hasattr(e,'msg') else str(e)
                     )
+                    print str(e)
                     end_scan()
                     returnValue(None)
             # execute next scan step
@@ -541,6 +572,7 @@ class ScanExecWidget(QtGui.QWidget):
                     'error on step',
                     e.msg if hasattr(e,'msg') else str(e)
                 )
+                print str(e)
                 self.stop_requested = True
                 loop()
                 returnValue(None)

@@ -41,7 +41,7 @@ class ScanInput:
     @inlineCallbacks
     def init_range(self):
         sr = self.scan_range
-        scan_class = sr.get(CLASS,RANGE)
+        scan_class = sr.setdefault(CLASS,RANGE)
         if scan_class == RANGE:
             start = sr[START]
             stop = sr[STOP]
@@ -76,6 +76,70 @@ class ScanInput:
         raise NotImplementedError('_get_input')
     def set_input(self):
         raise NotImplementedError('set_input')
+
+class LineScannerInput(ScanInput):
+    KDP = 'kdp'
+    BBO = 'bbo'
+    PDL = 'pdl'
+    SM_KEYS = (KDP,BBO,PDL)
+    def __init__(self,kdp_name,kdp_coeff,bbo_name,bbo_coeff,start,width,step):
+        self.kdp_name = kdp_name
+        self.kdp_coeff = kdp_coeff
+        self.bbo_name = bbo_name
+        self.bbo_coeff = bbo_coeff
+        self.sm_names = {
+            self.PDL:'pdl',
+            self.KDP:kdp_name,
+            self.BBO:bbo_name
+        }
+        self.sm_coeffs = {
+            self.PDL:1.0,
+            self.KDP:kdp_coeff,
+            self.BBO:bbo_coeff
+        }
+        ScanInput.__init__(self,{START:start,STOP:start+width,STEP:step})
+        self._on_start_d = self.on_start()
+
+    @inlineCallbacks
+    def on_start(self):
+        clients = {
+            sm:connectAsync() for sm in self.SM_KEYS
+        }
+        self.clients = clients
+        initial_position_ds = {}
+        for sm, client_d in clients.items():
+            client = yield client_d
+            client = client.stepper_motor
+            client.select_device(self.sm_names[sm])
+            clients[sm] = client
+            initial_position_ds[sm] = client.get_position()
+        initial_positions = self.initial_positions = {}
+        for sm, initial_position_d in initial_position_ds.items():
+            initial_position = yield initial_position_d
+            initial_positions[sm] = initial_position
+
+    @inlineCallbacks
+    def _get_input(self):
+        if self._on_start_d is not None:
+            yield self._on_start_d
+            self._on_start_d = None
+        position = yield self.clients[self.PDL].get_position()
+        returnValue(position)
+
+    @inlineCallbacks
+    def set_input(self,input):
+        if self._on_start_d is not None:
+            yield self._on_start_d
+            self._on_start_d = None
+        set_position_ds = {
+            sm:self.clients[sm].set_position(
+                int(
+                    self.sm_coeffs[sm] * (input - self.initial_positions[self.PDL]) + self.initial_positions[sm]
+                )
+            ) for sm in self.SM_KEYS
+        }
+        for sm, set_position_d in set_position_ds.items():
+            yield set_position_d
 
 class StepperMotorInput(ScanInput,LabradScanItem):
     OVERSHOOT = 500
@@ -127,7 +191,8 @@ class StepperMotorInput(ScanInput,LabradScanItem):
                     'bbo':500,
                     'probe vertical':10000,
                     'pol':20,
-                    'pdl':75                    
+                    'pdl':75,
+                    'bbo wifi':20
                 }.get(self.sm_name,self.OVERSHOOT)
             )
         yield sm_server.set_position(input)
