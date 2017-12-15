@@ -2,7 +2,7 @@ from deviceserver import DeviceServer, Device, device_setting, DeviceSignal
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import labrad
-from steppermotor import DigitalStepperMotor, CounterStepperMotor, RampStepperMotor, SetPositionStoppedException, DisabledException
+from steppermotor import NetworkStepperMotor, DigitalStepperMotor, CounterStepperMotor, RampStepperMotor, SetPositionStoppedException, DisabledException
 from daqmx.task.do import DOTask
 from daqmx.task.co import COTask
 from daqmx.task.ci import CITask
@@ -35,6 +35,7 @@ CLASS = 'class'
 DIGITAL = 'digital'
 COUNTER = 'counter'
 RAMP = 'ramp'
+NETWORK = 'network'
 
 STEP_CHANNEL = 'step channel' # step output channel for digital stepper motors, step input for ramp stepper motors
 DELAY = 'delay'
@@ -44,6 +45,9 @@ STEP_INPUT_CHANNEL = 'step input channel'
 
 RSM_ID = 'rsm id'
 STOP_CHANNEL = 'stop channel'
+
+IP = 'ip'
+PORT = 'port'
 
 ON_NEW_POSITION = 'on new position'
 ON_BUSY_STATUS_CHANGED = 'on busy status changed'
@@ -125,9 +129,7 @@ class StepperMotorDevice(Device):
 
     @device_setting(17,returns='b')
     def is_enableable(self,c):
-        return self.sm.is_enableable()
-    
-        
+        return self.sm.is_enableable()        
 
 class StepperMotorServer(DeviceServer):
     name = NAME    # Will be labrad name of server
@@ -149,23 +151,27 @@ class StepperMotorServer(DeviceServer):
     def add_stepper_motor(self,stepper_motor_name):
         reg = self.client.registry
         yield reg.cd(REGISTRY_PATH+[stepper_motor_name])
-        
         dirs, keys = yield reg.dir()
-        dir_channel = yield reg.get(DIR_CHANNEL)
-        dir_task = DOTask(dir_channel)
         
-        init_pos = yield reg.get(INIT_POS)        
-        
-        if ENABLE_CHANNEL in keys:
-            enable_channel = yield reg.get(ENABLE_CHANNEL)
-            enable_task = DOTask(enable_channel)
-        else:
-            enable_task = None
-
         if CLASS in keys:
             class_type = yield reg.get(CLASS)
         else:
             class_type = DIGITAL
+
+        if class_type in (DIGITAL,COUNTER,RAMP):
+
+            dir_channel = yield reg.get(DIR_CHANNEL)
+            dir_task = DOTask(dir_channel)
+
+            init_pos = yield reg.get(INIT_POS)        
+
+            if ENABLE_CHANNEL in keys:
+                enable_channel = yield reg.get(ENABLE_CHANNEL)
+                enable_task = DOTask(enable_channel)
+            else:
+                enable_task = None
+
+
         if class_type == DIGITAL:
             step_channel = yield reg.get(STEP_CHANNEL)
             step_task = DOTask(step_channel)
@@ -208,7 +214,12 @@ class StepperMotorServer(DeviceServer):
                 dir_task,
                 enable_task,
                 init_pos
-            )                
+            )
+
+        if class_type == NETWORK:
+            ip = yield reg.get('ip')
+            port = yield reg.get('port')
+            sm = NetworkStepperMotor(ip,port)
 
         self.add_device(
             stepper_motor_name,

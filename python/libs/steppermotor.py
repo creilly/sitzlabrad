@@ -1,6 +1,7 @@
 from serialtransceiver import HandshakeSerialDevice
 from daqmx.task.co import GenerationStoppedException
 from time import sleep
+import socket
 
 class NotEnableableException(Exception):
     args = ['stepper motor is not enableable']
@@ -17,51 +18,41 @@ class StepperMotor:
     DISABLED = False
     def __init__( 
         self,
-        dir_task,
-        enable_task = None,            
+        dir_manager,
+        enable_manager = None,            
         init_pos = 0, 
-        init_enabled = False,
-        enable_level = True,
-        forwards_level = True
+        init_enabled = DISABLED
         ):
         self._is_busy = False
-        self.enable_task = enable_task
-        self.enable_level = enable_level
-        if enable_task is not None:
+        self.enable_manager = enable_manager
+        self._is_enabled = None
+        if enable_manager is not None:
             self.set_enabled(init_enabled)
-        self.direction_task = dir_task
+            self._is_enabled = init_enabled
+        else:
+            self._is_enabled = self.ENABLED
+        self.dir_manager = dir_manager
         self.position = init_pos
         self.direction = None
-        self.forwards_level = forwards_level
 
     # oh god is that even a word?
     def is_enableable(self):
-        return self.enable_task is not None
+        return self.enable_manager is not None
 
     def set_enabled(self,is_enabled):
         if not self.is_enableable():
             raise NotEnableableException
-        self.enable_task.write_state(
-            {
-                self.ENABLED:self.enable_level,
-                self.DISABLED:not self.enable_level
-            }[is_enabled]
-        )
-        self._is_enabled = is_enabled
+        if is_enabled is not self.is_enabled():            
+            self.enable_manager.set_enabled(is_enabled)
+            self._is_enabled = is_enabled
 
     def is_enabled(self):
-        return self._is_enabled if self.is_enableable() else self.ENABLED
+        return self._is_enabled
 
     def set_direction(self,direction):
-        if direction is self.get_direction():
-            return
-        self.direction = direction
-        self.direction_task.write_state(
-            {
-                self.FORWARDS:self.forwards_level,
-                self.BACKWARDS:not self.forwards_level
-            }[direction]
-        )
+        if direction is not self.get_direction():            
+            self.dir_manager.set_direction(direction)
+            self.direction = direction
 
     def get_direction(self):
         return self.direction
@@ -72,7 +63,9 @@ class StepperMotor:
         old_position = self.get_position()
         delta = position - old_position
         if delta is 0: return
-        self.set_direction(delta > 0)
+        self.set_direction(
+            self.FORWARDS if delta > 0 else self.BACKWARDS
+        )
         self._is_busy = True
         pulses = self.generate_pulses(abs(delta))
         self._is_busy = False
@@ -88,7 +81,7 @@ class StepperMotor:
                 self.FORWARDS:+1,
                 self.BACKWARDS:-1
             }[self.get_direction()] * self.get_pulses()
-        )    
+        )
     
     def generate_pulses(self,pulses):
         raise NotImplementedError
@@ -102,27 +95,63 @@ class StepperMotor:
     def is_busy(self):
         return self._is_busy
 
-class DigitalStepperMotor(StepperMotor):
-    def __init__( 
+class DigitalEnableManager:
+    def __init__(self,task,enable_level=True):
+        self.task = task
+        self.enable_level = enable_level
+        
+    def set_enabled(self,is_enabled):
+        self.task.write_state(
+            {
+                StepperMotor.ENABLED:self.enable_level,
+                StepperMotor.DISABLED:not self.enable_level
+            }[is_enabled]
+        )
+
+class DigitalDirectionManager:
+    def __init__(self,task,forwards_level=True):
+        self.task = task
+        self.forwards_level = forwards_level
+
+    def set_direction(self,direction):
+        self.task.write_state(
+            {
+                StepperMotor.FORWARDS:self.forwards_level,
+                StepperMotor.BACKWARDS:not self.forwards_level
+            }[direction]
+        )
+
+class DigitalDirEnableStepperMotor(StepperMotor):
+    def __init__(
         self,
-        step_task,
-        delay,
-        dir_task, 
+        dir_task,
         enable_task = None,
         init_pos = 0, 
-        init_enable = False,
+        init_enable = StepperMotor.DISABLED,
         enable_level = True,
         forwards_level = True
         ):
         StepperMotor.__init__(
             self,
-            dir_task, 
-            enable_task,
-            init_pos, 
+            DigitalDirectionManager(dir_task,forwards_level), 
+            DigitalEnableManager(enable_task,enable_level) if enable_task is not None else None,
+            init_pos,
             init_enable,
-            enable_level,
-            forwards_level
         )
+
+class DigitalStepperMotor(DigitalDirEnableStepperMotor):
+    def __init__(
+        self,
+        step_task,
+        delay,
+        dir_task,
+        enable_task = None,
+        init_pos = 0, 
+        init_enable = StepperMotor.DISABLED,
+        enable_level = True,
+        forwards_level = True
+        ):
+        DigitalDirEnableStepperMotor.__init__(self,dir_task,enable_task,init_pos,init_enable,enable_level,forwards_level)
         self.step_task = step_task
         self.delay = delay
         self.stopped = False
@@ -148,7 +177,7 @@ class DigitalStepperMotor(StepperMotor):
     def stop(self):
         self.stopped = True
 
-class CounterStepperMotor(StepperMotor):
+class CounterStepperMotor(DigitalDirEnableStepperMotor):
     def __init__( 
         self,
         step_output_task,
@@ -156,19 +185,11 @@ class CounterStepperMotor(StepperMotor):
         dir_task, 
         enable_task = None,
         init_pos = 0, 
-        init_enable = False,
+        init_enable = StepperMotor.DISABLED,
         enable_level = True,
         forwards_level = True
         ):
-        StepperMotor.__init__(
-            self,
-            dir_task,
-            enable_task,
-            init_pos,
-            init_enable,
-            enable_level,
-            forwards_level
-        )
+        DigitalDirEnableStepperMotor.__init__(self,dir_task,enable_task,init_pos,init_enable,enable_level,forwards_level)
         self.step_output_task = step_output_task
         self.step_input_task = step_input_task
 
@@ -196,7 +217,7 @@ TIMEOUT = None
 HANDSHAKE_RESPONSE = 'H'
 ID_COMMAND = 'i'
 
-class RampStepperMotor(StepperMotor):
+class RampStepperMotor(DigitalDirEnableStepperMotor):
     def __init__( 
         self,
         rsm_id,
@@ -205,19 +226,11 @@ class RampStepperMotor(StepperMotor):
         dir_task, 
         enable_task = None,
         init_pos = 0, 
-        init_enable = False,
+        init_enable = StepperMotor.DISABLED,
         enable_level = True,
         forwards_level = True
         ):
-        StepperMotor.__init__(
-            self,
-            dir_task,
-            enable_task,
-            init_pos,
-            init_enable,
-            enable_level,
-            forwards_level
-        )
+        DigitalDirEnableStepperMotor.__init__(self,dir_task,enable_task,init_pos,init_enable,enable_level,forwards_level)
         self.rsm = HandshakeSerialDevice(
             HANDSHAKE_RESPONSE,
             ID_COMMAND,
@@ -245,3 +258,37 @@ class RampStepperMotor(StepperMotor):
 
     def get_pulses(self):        
         return self.step_task.get_count()
+
+class NetworkDevice:
+    BUF_SIZE = 1024    
+    def __init__(self,ip,port):
+        self.address = (ip,port)
+
+    def send_message(self,message):
+        connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        connection.connect(self.address)
+        connection.send(message + '\n')
+        return connection.recv(self.BUF_SIZE)        
+
+class NetworkDirectionManager(NetworkDevice):
+    def __init__(self,ip,port):
+        NetworkDevice.__init__(self,ip,port)
+        
+    def set_direction(self,direction):
+        self.send_message('d %d' % {StepperMotor.FORWARDS:1,StepperMotor.BACKWARDS:0}[direction])
+
+class NetworkStepperMotor(StepperMotor,NetworkDevice):
+    def __init__(self,ip,port):
+        StepperMotor.__init__(self,NetworkDirectionManager(ip,port),None,init_pos=0,init_enabled=StepperMotor.DISABLED)
+        NetworkDevice.__init__(self,ip,port)
+
+    def generate_pulses(self,pulses):
+        return int(self.send_message('s %d' % pulses))
+
+    def stop(self):
+        self.send_message('p')
+
+    def get_pulses(self):
+        return int(self.send_message('g'))
+
+    
