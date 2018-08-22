@@ -1,5 +1,6 @@
 from serialtransceiver import HandshakeSerialDevice
 from daqmx.task.co import GenerationStoppedException
+from threading import Lock
 from time import sleep
 import socket
 
@@ -214,7 +215,7 @@ from serialtransceiver import HandshakeSerialDevice
 BAUDRATE = 115200
 TIMEOUT = None
 
-HANDSHAKE_RESPONSE = 'H'
+RSM_HANDSHAKE_RESPONSE = 'H'
 ID_COMMAND = 'i'
 
 class RampStepperMotor(DigitalDirEnableStepperMotor):
@@ -232,7 +233,7 @@ class RampStepperMotor(DigitalDirEnableStepperMotor):
         ):
         DigitalDirEnableStepperMotor.__init__(self,dir_task,enable_task,init_pos,init_enable,enable_level,forwards_level)
         self.rsm = HandshakeSerialDevice(
-            HANDSHAKE_RESPONSE,
+            RSM_HANDSHAKE_RESPONSE,
             ID_COMMAND,
             rsm_id,
             BAUDRATE,
@@ -291,4 +292,52 @@ class NetworkStepperMotor(StepperMotor,NetworkDevice):
     def get_pulses(self):
         return int(self.send_message('g'))
 
-    
+SSM_HANDSHAKE_RESPONSE = 'r'
+SET_DIRECTION = 'd'
+GENERATE_PULSES = 's'
+GET_PULSES = 'g'
+STOP = 'p'
+FINISHED = 'f'
+
+class SerialStepperMotor(StepperMotor):
+    def __init__(self,sm_id):
+        self.lock = Lock()
+        self.dev = HandshakeSerialDevice(
+            SSM_HANDSHAKE_RESPONSE,
+            ID_COMMAND,
+            sm_id,
+            BAUDRATE,
+            TIMEOUT
+        )
+
+        class DirectionManager:
+            def __init__(self,sm):
+                self.sm = sm
+
+            def set_direction(self,direction):
+                self.sm.send_message('%s %d' % (SET_DIRECTION,direction))
+
+        StepperMotor.__init__(
+            self,
+            DirectionManager(self)
+        )
+
+    def generate_pulses(self,pulses):
+        response = int(self.send_message('%s %d' % (GENERATE_PULSES,pulses)))
+        while response < 0: # pulse count exceded threshold
+            sleep(.1)
+            response = int(self.send_message(FINISHED))
+        return response
+
+    def stop(self):
+        self.send_message(STOP)
+
+    def get_pulses(self):
+        return int(self.send_message(GET_PULSES))
+
+    def send_message(self,message):
+        self.lock.acquire()
+        self.dev.write_line(message)
+        response = self.dev.read_line().strip()
+        self.lock.release()
+        return response

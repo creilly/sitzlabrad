@@ -192,7 +192,9 @@ class StepperMotorInput(ScanInput,LabradScanItem):
                     'probe vertical':10000,
                     'pol':20,
                     'pdl':75,
-                    'bbo wifi':20
+                    'bbo wifi':20,
+                    'kdp wifi':20,
+                    'pol wifi':20
                 }.get(self.sm_name,self.OVERSHOOT)
             )
         yield sm_server.set_position(input)
@@ -257,11 +259,13 @@ class DelayGeneratorChainInput(ScanInput,LabradScanItem):
     @inlineCallbacks
     def set_input(self,input):
         dg = yield self.get_delay_generator_server()
-        yield dg.select_device(self.master)
-        yield dg.set_delay(input)
+        p = dg.packet()
+        p.select_device(self.master)
+        p.set_delay(input)
         for slave in self.slaves:
-            yield dg.select_device(slave)
-            yield dg.set_delay(input+self.deltas[slave])
+            p.select_device(slave)
+            p.set_delay(input+self.deltas[slave])
+        yield p.send()
 
 class TestScanInput(ScanInput):
     def _get_input(self):
