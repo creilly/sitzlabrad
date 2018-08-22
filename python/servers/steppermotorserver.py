@@ -2,7 +2,7 @@ from deviceserver import DeviceServer, Device, device_setting, DeviceSignal
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import labrad
-from steppermotor import NetworkStepperMotor, DigitalStepperMotor, CounterStepperMotor, RampStepperMotor, SetPositionStoppedException, DisabledException
+from steppermotor import NetworkStepperMotor, DigitalStepperMotor, CounterStepperMotor, RampStepperMotor, SerialStepperMotor, SetPositionStoppedException, DisabledException
 from daqmx.task.do import DOTask
 from daqmx.task.co import COTask
 from daqmx.task.ci import CITask
@@ -36,6 +36,7 @@ DIGITAL = 'digital'
 COUNTER = 'counter'
 RAMP = 'ramp'
 NETWORK = 'network'
+SERIAL = 'serial'
 
 STEP_CHANNEL = 'step channel' # step output channel for digital stepper motors, step input for ramp stepper motors
 DELAY = 'delay'
@@ -144,7 +145,10 @@ class StepperMotorServer(DeviceServer):
         stepper_motor_names = stepper_motor_names[0] # just get directories
         self.stepper_motors = {name:None for name in stepper_motor_names}
         for stepper_motor_name in stepper_motor_names:
+            print 'adding', stepper_motor_name
             yield self.add_stepper_motor(stepper_motor_name)
+            print 'added', stepper_motor_name
+            
         yield DeviceServer.initServer(self)
 
     @inlineCallbacks
@@ -220,6 +224,10 @@ class StepperMotorServer(DeviceServer):
             ip = yield reg.get('ip')
             port = yield reg.get('port')
             sm = NetworkStepperMotor(ip,port)
+
+        if class_type == SERIAL:
+            device_id = yield reg.get('device id')
+            sm = SerialStepperMotor(device_id)
 
         self.add_device(
             stepper_motor_name,
