@@ -1,4 +1,5 @@
 from serialtransceiver import HandshakeSerialDevice
+import socket
 
 READ_COMMAND = 'r'
 WRITE_COMMAND = 'w'
@@ -41,7 +42,42 @@ class DelayGenerator(HandshakeSerialDevice):
         if response == RANGE_FAILURE_RESPONSE:
             raise DelayGeneratorException('requested delay out of range')
 
+class DAQmxDelayGenerator:
+    SET_DELAY = 's'
+    GET_DELAY = 'g'
+    def __init__(self,addr,port):
+        self.addr = addr
+        self.port = port
+
+    def get_connection(self):
+        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.connect((self.addr, self.port))
+        return conn
+
+    def get_delay(self):
+        conn = self.get_connection()
+        conn.send(self.GET_DELAY + '\n')
+        response = conn.recv(512)
+        return int(response)
+
+    def set_delay(self,delay):
+        conn = self.get_connection()
+        conn.send(self.SET_DELAY + ' ' + str(delay) + '\n')
+        response = conn.recv(512)
+
 if __name__ == '__main__':
+    print '---------- daqmx dg ----------\n'
+    addr = raw_input('enter ip addr of daqmx host (press enter for localhost): ')
+    addr = addr if addr else 'localhost'
+    port = int(raw_input('enter port of daqmx host: '))
+    daqmx_dg = DAQmxDelayGenerator(addr,port)
+    print 'initial delay', daqmx_dg.get_delay()
+    daqmx_dg.set_delay(int(raw_input('enter delay: ')))
+    raw_input('press enter to get query delay')
+    print 'new delay', daqmx_dg.get_delay()
+    print '\n--------- arduino dg ---------\n'
     for i in range(5):
         dg = DelayGenerator(i)
         print i, dg.get_delay()
+
+
