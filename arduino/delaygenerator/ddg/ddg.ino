@@ -26,12 +26,16 @@ const char success_response = 's'; // command successful
 const char command_failure_response = 'c'; // invalid command
 const char send_delay_response = 'd'; // send desired delay
 const char range_failure_response = 'r'; // desired delay invalid
+const char init_failure_response = 'i'; // ring buffer initialization failed
 
 // parameters
 byte device_id; // unique ddg identifier
-int offset; // minimum achievable delay
+long offset; // minimum achievable delay
 float min_voltage, max_voltage; // config parameters for sub cycle delays
 long current_delay; // delay currently programmed
+
+// initialization state
+byte init_success;
 
 void init_pins() {
   pinMode(clock_pin,OUTPUT);
@@ -48,11 +52,12 @@ void init_pins() {
   digitalWrite(clear_pin,HIGH);
 }
 
-void init_params() {
+void init_params() {  
   device_id = read_id();
   min_voltage = read_min();
   max_voltage = read_max();
   offset = read_offset();
+  init_success = initialize_delay();
   current_delay = read_delay();
 }
 
@@ -70,6 +75,9 @@ void loop() {
 }
 
 char handle_command(char command) {
+  if (!init_success) {
+    Serial.println(init_failure_response);
+  }
   switch (command) {
   case id_command:
     Serial.println(device_id);
@@ -82,25 +90,19 @@ char handle_command(char command) {
     return set_delay(Serial.readStringUntil(term_char).toInt());
   default:
     return command;
-    //return command_failure_response;
+    // return command_failure_response;
   }
 }
 
 // method to convert a time in ns to the binary values for counters & call dac08 method and then write to registers
-byte set_delay(unsigned long delay) {
+byte set_delay(long delay) {
 
-  if ((delay <= 0) || (delay >= clock_period*pow(2,20))) {
+  if ((delay < offset) || (delay >= clock_period*pow(2,20))) {
     return range_failure_response;
   }
+  long offset_delay = delay - offset;
 
-  if (delay < offset) { 
-    delay = 0;
-  }
-  else {
-    delay = delay - offset;
-  }
-
-  unsigned long cycles = delay/long(clock_period);      
+  long cycles = offset_delay/clock_period;      
   int bits[total_bits]; // store the bits to be written in an int array
 
   // read cycles into binary array
@@ -108,7 +110,7 @@ byte set_delay(unsigned long delay) {
     bits[k] = (cycles >> k) & 1;
   }
    
-  int remainder = delay % clock_period;
+  int remainder = offset_delay % clock_period;
   int dac_value = get_dac_value(remainder);
 
   // read dac_value to binary array
@@ -117,7 +119,7 @@ byte set_delay(unsigned long delay) {
   }  
 
   shift(bits, total_bits);
-  current_delay = delay + offset; // add back on offset
+  current_delay = delay; // add back on offset
   write_delay(current_delay);
   return success_response;
 }
