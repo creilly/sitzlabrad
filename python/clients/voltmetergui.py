@@ -302,9 +302,9 @@ class VoltmeterWidget(QtGui.QWidget):
         )
         
     def closeEvent(self,event):
-        event.accept()
         if reactor.running:
             reactor.stop()
+        event.accept()
 
 class ChannelWidget(QtGui.QDialog):
     def __init__(self,channel,trace,units):
@@ -319,8 +319,49 @@ class ChannelWidget(QtGui.QDialog):
         plot = plot_widget.plot(trace)
         self.plot = plot
         self.trace = trace
+        number_layout = QtGui.QHBoxLayout()
+        layout.addLayout(number_layout)
+        number_label = QtGui.QLabel()
+        number_layout.addWidget(number_label)
+        digits_spin = QtGui.QSpinBox()
+        digits_spin.setMinimum(0)
+        digits_spin.setMaximum(100)
+        digits_spin.setValue(3)
+        digits_spin.setPrefix('digits: ')
+        number_layout.addWidget(digits_spin)
+        font_spin = QtGui.QSpinBox()
+        font_spin.setPrefix('font: ')
+        font_spin.setMinimum(1)
+        font_spin.setMaximum(1000)
+        def font_changed(font):
+            number_label.setFont(
+                QtGui.QFont(
+                    QtGui.QFont().defaultFamily(),
+                    font
+                )
+            )
+        font_spin.valueChanged.connect(
+            font_changed
+        )
+        font_spin.setValue(30)
+        number_layout.addWidget(font_spin)
+        average_spin = QtGui.QSpinBox()
+        average_spin.setMinimum(1)
+        average_spin.setMaximum(TRACE_SIZE)
+        average_spin.setPrefix('history: ')
+        number_layout.addWidget(average_spin)        
+        number_layout.addStretch()
+        self.number_label = number_label
+        self.digits_spin = digits_spin
+        self.average_spin = average_spin
+        
     def update_plot(self):
         self.plot.setData(self.trace)
+        self.number_label.setText(
+            (
+                r'%.' + str(self.digits_spin.value()) + 'f'
+            ) % (sum(self.trace[0:self.average_spin.value()])/self.average_spin.value())
+        )
 if __name__ == '__main__':
     @inlineCallbacks
     def main():

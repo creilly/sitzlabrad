@@ -95,13 +95,9 @@ class DelayGeneratorWidget(QtGui.QWidget):
         add_button = QtGui.QPushButton('add ^')
         remove_button = QtGui.QPushButton('remove v')
         def on_add():
-            for item in udw:
-                udw.removeItemWidget(item)
-                cdw.addItem(item)
+            cdw.addItem(udw.takeItem(udw.currentRow()))
         def on_remove():
-            for item in cdw:
-                cdw.removeItemWidget(item)
-                udw.addItem(item)
+            udw.addItem(cdw.takeItem(cdw.currentRow()))
         add_button.clicked.connect(on_add)
         remove_button.clicked.connect(on_remove)
         layout.addWidget(QtGui.QLabel('chained dgs'))

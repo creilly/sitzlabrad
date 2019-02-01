@@ -12,7 +12,8 @@ RANGE_FAILURE_RESPONSE = 'r'
 HANDSHAKE_RESPONSE = 'h'
 
 BAUDRATE=115200
-TIMEOUT=5
+
+TIMEOUT=2
 
 class DelayGeneratorException(Exception): pass
 
