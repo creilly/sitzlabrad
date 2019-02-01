@@ -1,5 +1,5 @@
-#include <EEPROM.h> // hack: a dep. of rsm_eeprom but we must include here as well
-#include "ssm_eeprom.h" // accesses rsm configuration params
+#include <EEPROM.h> // hack: a dep. of ssm_eeprom but we must include here as well
+#include "ssm_eeprom.h" // accesses ssm configuration params
 
 // stepper motor parameters to be read from eeprom
 const byte step_pin = 8;
