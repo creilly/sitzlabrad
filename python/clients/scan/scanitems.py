@@ -189,7 +189,7 @@ class StepperMotorInput(ScanInput,LabradScanItem):
                     'lid':3000,
                     'kdp':500,
                     'bbo':500,
-                    'probe vertical':10000,
+                    'probe vertical':20000,
                     'pol':20,
                     'pdl':75,
                     'bbo wifi':20,
