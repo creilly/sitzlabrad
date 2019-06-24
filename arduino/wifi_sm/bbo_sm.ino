@@ -5,7 +5,7 @@ const char* ssid = "robin";
 const char* password = "scatter12";
 
 const byte step_pin = 0;
-const byte dir_pin = 4; // bbo dir is gpio1, kdp dir we're trying gpio4
+const byte dir_pin = 1; // bbo dir is gpio1, kdp dir we're trying gpio4
 
 byte clients_connected;
 byte client_index;

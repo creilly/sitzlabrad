@@ -21,7 +21,7 @@ class DAQmxConstantsDict(object):
             with open(USED_CONSTANTS_FILE,'w') as file:
                 file.write(json.dumps(self.dict,indent=2,separators=(',',': '),sort_keys=True))
             return self.dict[key]
-        raise DAQmxExcpetion('unknown DAQmx constant: %s' % key)
+        raise DAQmxException('unknown DAQmx constant: %s' % key)
 
 constants = DAQmxConstantsDict()
         

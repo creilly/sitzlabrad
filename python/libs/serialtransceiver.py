@@ -68,19 +68,19 @@ class HandshakeSerialDevice(SerialLineTransceiver):
         )
 
     @classmethod
-    def _init(cls,handshake_char,id_char,id,baudrate,timeout):
+    def _init(cls,handshake_char,id_char,device_id,baudrate,timeout):
         for port,_ in cls.enumerate_serial_ports():
             try:
                 ser = Serial(
                     port=port,
                     baudrate=baudrate,
-                    timeout=10 # give the device this much time to handshake
+                    timeout=2 # give the device this much time to handshake
                 )
             except SerialException, s:
                 continue
             try:
                 line_trans = SerialLineTransceiver(ser)
-                if cls._handshakes(line_trans,handshake_char) and id == cls._get_id(line_trans,id_char):
+                if cls._handshakes(line_trans,handshake_char) and device_id == cls._get_id(line_trans,id_char):
                     ser.close()
                     ser = Serial(
                         port=port,
@@ -92,7 +92,7 @@ class HandshakeSerialDevice(SerialLineTransceiver):
                     return ser
             except SerialLineTransceiverException:
                 continue
-        raise HandshakeSerialDeviceException('device id %d not found' % id)
+        raise HandshakeSerialDeviceException('device id %d not found' % device_id)
 
     @staticmethod
     def _handshakes(line_trans,handshake_char):
