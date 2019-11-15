@@ -4,6 +4,8 @@ from threading import Lock
 from time import sleep
 import socket
 
+TIMEOUT_CODE = 999
+
 class NotEnableableException(Exception):
     args = ['stepper motor is not enableable']
 class SetPositionStoppedException(Exception):
@@ -68,8 +70,13 @@ class StepperMotor:
             self.FORWARDS if delta > 0 else self.BACKWARDS
         )
         self._is_busy = True
-        pulses = self.generate_pulses(abs(delta))
+        failed = False
+        try:
+            pulses = self.generate_pulses(abs(delta))
+        except Exception, e:
+            failed = True
         self._is_busy = False
+        if failed: raise e
         self.position = old_position + (
             1 if delta > 0 else -1
         ) * pulses
@@ -260,14 +267,30 @@ class RampStepperMotor(DigitalDirEnableStepperMotor):
     def get_pulses(self):        
         return self.step_task.get_count()
 
+class TimeoutException(Exception):
+    code = TIMEOUT_CODE
 class NetworkDevice:
     BUF_SIZE = 1024    
     def __init__(self,ip,port):
         self.address = (ip,port)
 
     def send_message(self,message):
-        connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        connection.connect(self.address)
+        max_attempts = 10
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                connection.settimeout(5.0)
+                connection.connect(self.address)
+                break
+            except socket.timeout:
+                ip, port = self.address
+                print 'ip:', ip, 'attempt:', attempt
+                if attempt == max_attempts:
+                    raise TimeoutException()
+                continue
+        connection.settimeout(None)
         connection.send(message + '\n')
         return connection.recv(self.BUF_SIZE)        
 

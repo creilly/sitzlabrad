@@ -2,7 +2,8 @@ from deviceserver import DeviceServer, Device, device_setting, DeviceSignal
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import labrad
-from steppermotor import NetworkStepperMotor, DigitalStepperMotor, CounterStepperMotor, RampStepperMotor, SerialStepperMotor, SetPositionStoppedException, DisabledException
+from labrad.types import Error
+from steppermotor import NetworkStepperMotor, TimeoutException, DigitalStepperMotor, CounterStepperMotor, RampStepperMotor, SerialStepperMotor, SetPositionStoppedException, DisabledException
 from daqmx.task.do import DOTask
 from daqmx.task.co import COTask
 from daqmx.task.ci import CITask
@@ -95,8 +96,8 @@ class StepperMotorDevice(Device):
                 sm.set_position,
                 position
             )
-            failed = False
-        except (SetPositionStoppedException,DisabledException), e:
+            failed = False            
+        except (SetPositionStoppedException,DisabledException,TimeoutException), e:
             failed = True
         self.on_busy_status_changed(False)
         new_position = sm.get_position()
