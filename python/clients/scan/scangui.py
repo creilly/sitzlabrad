@@ -26,7 +26,9 @@ from scanitems import \
     DelayGeneratorInput, \
     DelayGeneratorChainInput, \
     VoltmeterMathOutput, \
-    LineScannerInput
+    LineScannerInput, \
+    ManualScanInput, \
+    ManualScanOutput
 from util import mangle
 from filecreation import get_datetime
 
@@ -36,7 +38,8 @@ INPUTS = {
     STEPPER_MOTOR:StepperMotorInput,
     LINE_SCANNER:LineScannerInput,
     DELAY_GENERATOR:DelayGeneratorInput,
-    DELAY_GENERATOR_CHAIN:DelayGeneratorChainInput
+    DELAY_GENERATOR_CHAIN:DelayGeneratorChainInput,
+    MANUAL:ManualScanInput
 }
 
 # scan outputs and associated keys
@@ -44,7 +47,8 @@ OUTPUTS = {
     TEST:TestOutput,
     VOLTMETER:VoltmeterOutput,
     VOLTMETER_MATH:VoltmeterMathOutput,
-    AUGER:AugerOutput
+    AUGER:AugerOutput,
+    MANUAL:ManualScanOutput
 }
 
 # fraction of total points in scan to use for local peak finding
@@ -169,24 +173,36 @@ class ScanPlot(PlotItem):
             #     'time',
             #     get_datetime()
             # )
-            self.data_vault = data_vault
+            self.data_vault = data_vault        
+        # get scan input arguments
+        args = mangle(scan[INPUT].get(ARGS,{}))
+        # replace special keyword SELF with reference to scangui object
+        for key, val in args.items():
+            if val == SELF:
+                args[key] = self.parent()
         # instantiate scan input object
         self.input = INPUTS[
             scan[INPUT][CLASS]
         ](
-            **mangle(scan[INPUT].get(ARGS,{}))
+            **args
         )
         # note initial position if we are planning to return to it after scan
         if self.is_returning():
             self._return_input = yield self.input._get_input()
-        # instantiate scan output object
-        self.outputs = [
-            OUTPUTS[
-                output[CLASS]
-            ](
-                **mangle(output.get(ARGS,{}))
-            ) for output in outputs
-        ]
+        # instantiate scan output object(s)
+        self.outputs = []
+        for output in outputs:
+            args = mangle(output.get(ARGS,{}))
+            for key, val in args.items():
+                if val == SELF:
+                    args[key] = self.parent()
+            self.outputs.append(
+                OUTPUTS[
+                    output[CLASS]
+                ](
+                    **args
+                )
+            )
         # intialize x and y values
         self.x_data = []
         self.y_datas = []

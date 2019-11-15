@@ -5,6 +5,7 @@ import numpy as np
 from scandefs import *
 from voltmeterclient import VoltmeterClient
 from operator import add, sub, mul, div
+from PySide import QtGui
 
 np.random.seed()
 
@@ -27,6 +28,42 @@ class LabradScanItem:
             else:
                 yield self._client_connecting_d            
         returnValue(self._client)
+
+class ManualScanInput(QtGui.QWidget):
+    def __init__(self,parent=None,list=None):
+        self.parent = parent
+        self.list = list
+        
+    def get_input(self):
+        if self.list is not None:
+            if self.list:
+                value = self.list.pop(0)
+                button = QtGui.QMessageBox.information(
+                    self.parent,
+                    'press button to proceed',
+                    'press \'ok\' button to proceed to input value %d or \'cancel\' to end scan' % value,
+                    QtGui.QMessageBox.Ok,
+                    QtGui.QMessageBox.Cancel
+                )
+                return {
+                    QtGui.QMessageBox.Ok:value,
+                    QtGui.QMessageBox.Cancel:None                    
+                }[button]
+            else:
+                return None
+        else:            
+            value, code = QtGui.QInputDialog.getInt(
+                self.parent,
+                'enter input','enter input (or cancel to end scan)'
+            )
+            print 'here'
+            return value if code else None
+
+    def set_input(self):
+        return
+
+    def _get_input(self):
+        return 0.0
         
 # inheritors must implement self._get_input and self.set_input
 class ScanInput:
@@ -187,13 +224,13 @@ class StepperMotorInput(ScanInput,LabradScanItem):
             yield sm_server.set_position(
                 input-{self.FORWARDS:+1,self.BACKWARDS:-1}[self.direction]*{
                     'lid':3000,
-                    'kdp':500,
-                    'bbo':500,
-                    'probe vertical':20000,
+                    'kdp':1000,
+                    'bbo':1000,
+                    'probe vertical':5000,
                     'pol':20,
                     'pdl':75,
-                    'bbo wifi':20,
-                    'kdp wifi':20,
+                    'bbo wifi':100,
+                    'kdp wifi':100,
                     'pol wifi':20
                 }.get(self.sm_name,self.OVERSHOOT)
             )
@@ -416,3 +453,13 @@ class TestOutput:
         )
         self.index += 1
         return d
+
+class ManualScanOutput(QtGui.QWidget):
+    def __init__(self,parent):
+        self.parent = parent
+
+    def get_output(self):
+        code = False
+        while not code:
+            value, code = QtGui.QInputDialog.getDouble(self.parent,'enter next output','output')
+        return value
