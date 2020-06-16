@@ -14,11 +14,36 @@ class Task(object):
     AI,AO,DI,DO,CI,CO,EMPTY=0,1,2,3,4,5,6
     TASK_TYPES = (AI,AO,DI,DO,CI,CO,EMPTY)
 
+    majversionraw = c_uint32(0)
+    minversionraw = c_uint32(0)
+    daqmx(
+        dll.DAQmxGetSysNIDAQMajorVersion,
+        (
+            byref(majversionraw),
+        )
+    )
+    daqmx(
+        dll.DAQmxGetSysNIDAQMinorVersion,
+        (
+            byref(minversionraw),
+        )
+    )
+    majversion = majversionraw.value
+    minversion = minversionraw.value
+    _handle = c_uint if (
+            (
+                majversion < 8
+            ) or
+            (
+                majversion == 8 and minversion <= 8
+            )
+    ) else c_void_p
+
     def __init__(self,*channels):
         """
         load a global task into memory and optionally initialize with global channel
         """
-        handle = c_uint32(0)
+        handle = Task._handle()
         daqmx(
             dll.DAQmxCreateTask,
             (
@@ -72,22 +97,7 @@ class Task(object):
 
     @classmethod
     def get_channel_type(cls,channel):
-        handle = c_uint32(0)
-        daqmx(
-            dll.DAQmxCreateTask,
-            (
-                '',
-                byref(handle)
-            )            
-        )
-        handle = handle.value
-        daqmx(
-            dll.DAQmxAddGlobalChansToTask,
-            (
-                handle,
-                channel
-            )
-        )
+        handle = Task(channel).handle
         channel_type = c_uint32(0)
         daqmx(
             dll.DAQmxGetChanType,

@@ -1,4 +1,5 @@
 from daqmx import *
+from daqmx.task import Task
 import sys
 import select
 import socket
@@ -33,7 +34,7 @@ server_socket.listen(5)
 
 conns = []
 
-raw_handle = c_uint32(0)
+raw_handle = Task._handle(0)
 daqmx(
     dll.DAQmxLoadTask,
     (
