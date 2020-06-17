@@ -12,6 +12,13 @@ setup(
     ],
     packages=[
         'qtutils',
-        'daqmx'
-    ]
+        'daqmx',
+        'daqmx.task'
+    ],
+    package_data={
+        'daqmx': [
+            'daqmx_constants_used.dat',
+            'daqmx_constants_unused.dat'
+        ]
+    }
 )
