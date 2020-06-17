@@ -51,7 +51,7 @@ class Task(object):
                 byref(handle)
             )
         )
-        self.handle = handle.value
+        self.handle = handle
         for channel in channels:
             self.add_channel(channel)
         
